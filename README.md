@@ -45,24 +45,31 @@ For best results, put your logo (PNG, transparent or white background, ~300 px w
 
 ---
 
-## Run on your computer
+## Run on your computer (no database to install)
 
-1. Install **Node.js 20 or newer** and **PostgreSQL**.
-2. Create a database:
-   ```
-   createdb neusource_crm
-   ```
-3. In the project folder:
-   ```
-   npm install
-   cp .env.example .env        (edit DATABASE_URL and SESSION_SECRET)
-   ```
-4. Start:
-   ```
-   DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/neusource_crm SESSION_SECRET=anything npm start
-   ```
-   (On Windows PowerShell set the variables with `$env:DATABASE_URL="..."` first.)
-5. Open http://localhost:3000 — the first screen asks you to create the **admin** account.
+Without a `DATABASE_URL`, the portal uses a **built-in database** saved in the `data` folder.
+
+**Windows (easiest)**
+1. Install **Node.js LTS** from nodejs.org (one time).
+2. Unzip this project, then double-click **`START.bat`**.
+   The first run installs packages (needs internet, about a minute), then the portal opens at http://localhost:3000.
+3. Create the admin account on the first screen.
+4. Keep the black window open while using the portal. Close it to stop.
+
+**Mac / Linux**
+```
+npm install
+npm start
+```
+then open http://localhost:3000.
+
+**Team use in the office:** other computers on the same Wi-Fi/LAN can open `http://<this-computer's-IP>:3000`
+(find the IP with `ipconfig` on Windows). Windows may ask to allow Node.js through the firewall — allow it for private networks.
+
+**Your data** is in the `data` folder. Back it up by copying that folder (with the portal closed),
+or use **Team & Access → Download data backup**. Do not delete the `data` folder.
+
+Using your own PostgreSQL instead: set `DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/neusource_crm` before starting.
 
 ## Deploy for FREE (Render free app + Neon free database)
 

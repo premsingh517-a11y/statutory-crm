@@ -13,7 +13,7 @@ const DC = require('./public/js/docs-content.js');
 
 const PROD = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
-if (PROD && !process.env.SESSION_SECRET) { console.error('SESSION_SECRET must be set in production'); process.exit(1); }
+if (PROD && db.pool && !process.env.SESSION_SECRET) { console.error('SESSION_SECRET must be set in production'); process.exit(1); }
 
 const app = express();
 app.set('trust proxy', 1); // Render runs behind a proxy (needed for secure cookies)
@@ -26,7 +26,8 @@ app.use((req, res, next) => {
   next();
 });
 app.use(session({
-  store: new PgSession({ pool: db.pool, tableName: 'sessions', createTableIfMissing: true }),
+  // cloud Postgres: sessions kept in the database; built-in local database: kept in memory (log in again after a restart)
+  store: db.pool ? new PgSession({ pool: db.pool, tableName: 'sessions', createTableIfMissing: true }) : undefined,
   secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
   name: 'nscrm.sid',
   resave: false,

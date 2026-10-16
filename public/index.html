@@ -11,6 +11,16 @@
 <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
+<script>
+if (location.protocol === 'file:') {
+  document.write('<div style="font:16px/1.6 Segoe UI,Arial,sans-serif;max-width:640px;margin:60px auto;padding:28px;border:2px solid #8A1412;border-radius:12px;color:#231f20">'
+    + '<h2 style="color:#8A1412;margin-top:0">Is file ko seedha mat kholiye</h2>'
+    + '<p>Portal chalane ke liye project folder mein <b>START.bat</b> par double-click karein. '
+    + 'Phir browser mein <b>http://localhost:3000</b> khulega.</p>'
+    + '<p>Pehle <b>Node.js (LTS)</b> install hona chahiye — nodejs.org se.</p></div>');
+  document.close();
+}
+</script>
 
 <!-- ============ LOGIN / SETUP ============ -->
 <div id="auth" class="auth hidden">

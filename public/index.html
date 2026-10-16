@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#8A1412">
+<title>NeuSource Statutory CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<!-- ============ LOGIN / SETUP ============ -->
+<div id="auth" class="auth hidden">
+ <div class="hero">
+  <div><span class="logo-white" data-logo></span></div>
+  <div>
+   <h2>Statutory compliance,<br><span>done right.</span></h2>
+   <p>NeuSource's internal workspace for auditor appointment documents — on letterhead, as per Companies Act, ICAI, ICSI and MCA requirements.</p>
+   <ul><li>First auditor within 30 days of incorporation</li><li>Auditor appointment at AGM</li><li>Casual vacancy by resignation or otherwise</li><li>e-Form ADT-1 data sheet and due-date tracking</li></ul>
+  </div>
+  <small style="color:#f0cfcd;position:relative;z-index:1">© NeuSource Startup Minds India Limited</small>
+ </div>
+ <div class="formside">
+  <form id="loginForm" class="hidden">
+   <div><h1>Welcome back</h1><p class="sub">Log in with your NeuSource account.</p></div>
+   <div id="loginErr" class="err hidden"></div>
+   <div><label>Email</label><input type="email" name="email" autocomplete="username" required></div>
+   <div><label>Password</label><input type="password" name="password" autocomplete="current-password" required></div>
+   <button type="submit">Log in</button>
+   <p class="hint">Forgot your password? Ask your admin to reset it.</p>
+  </form>
+  <form id="setupForm" class="hidden">
+   <div><h1>First-time setup</h1><p class="sub">Create the admin account. You can add executives after logging in.</p></div>
+   <div id="setupErr" class="err hidden"></div>
+   <div><label>Your name</label><input name="name" required></div>
+   <div><label>Email</label><input type="email" name="email" autocomplete="username" required></div>
+   <div><label>Password (min. 8 characters)</label><input type="password" name="password" minlength="8" autocomplete="new-password" required></div>
+   <button type="submit">Create admin account</button>
+  </form>
+ </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appShell" class="hidden">
+ <header class="topbar">
+  <div class="brandbox"><button class="menu-toggle" id="menuToggle" aria-label="Menu">☰</button><span data-logo></span><div class="app"><b>Statutory CRM</b>Auditor Appointment</div></div>
+  <div class="userbox"><div class="who"><b id="meName"></b><br><small id="meRole"></small></div><div class="avatar" id="meAvatar"></div><button class="ghost sm" id="logoutBtn">Log out</button></div>
+ </header>
+ <nav class="side" id="side">
+  <a href="#/dashboard" data-route="dashboard"><span class="ic">◎</span>Dashboard</a>
+  <a href="#/generate" data-route="generate"><span class="ic">📄</span>Generate Documents</a>
+  <div class="sec">Masters</div>
+  <a href="#/clients" data-route="clients"><span class="ic">🏢</span>Clients</a>
+  <a href="#/cas" data-route="cas"><span class="ic">🧾</span>CA Firms</a>
+  <div class="sec admin-only">Admin</div>
+  <a href="#/users" data-route="users" class="admin-only"><span class="ic">👥</span>Team &amp; Access</a>
+  <a href="#/activity" data-route="activity" class="admin-only"><span class="ic">🕘</span>Activity Log</a>
+  <a href="#/account" data-route="account"><span class="ic">🔑</span>My Account</a>
+  <div class="foot">All drafts must be reviewed by a CA / CS before signing or filing.</div>
+ </nav>
+ <main id="view"></main>
+</div>
+
+<div id="modal" class="modal hidden"><div class="paper" id="paper"></div></div>
+
+<script src="/js/docs-content.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

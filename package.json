@@ -1,0 +1,23 @@
+{
+  "name": "neusource-statutory-crm",
+  "version": "1.0.0",
+  "description": "NeuSource Statutory CRM — auditor appointment documents (ADT-1) on letterhead",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "connect-pg-simple": "^10.0.0",
+    "docx": "^9.11.0",
+    "express": "^5.3.0",
+    "express-session": "^1.19.0",
+    "jszip": "^3.10.2",
+    "pg": "^8.23.1"
+  }
+}

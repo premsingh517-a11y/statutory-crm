@@ -1,0 +1,19 @@
+# Render Blueprint — FREE setup
+# App: Render free web service.  Database: free PostgreSQL from Neon (neon.tech).
+# Render dashboard → New → Blueprint → select this repo → paste your Neon connection string as DATABASE_URL.
+services:
+  - type: web
+    name: neusource-statutory-crm
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/setup-status
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false   # Render will ask you to paste it (Neon connection string)

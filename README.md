@@ -31,7 +31,8 @@ gold background and can be changed; changing one date updates the dates that dep
 - Login for every team member. **Admin** and **Executive** roles.
 - One shared client list and CA firm list for the whole team (stored in PostgreSQL).
 - Meeting details are auto-saved per client and per case, so anyone in the team can continue the work.
-- Dashboard with deadlines: Board meeting within 30 days, ADT-1 within 15 days, 21-day notice, members' approval within 3 months, ADT-3, first AGM.
+- Client-first workflow: open a client from **Clients**, pick a case and download the documents. Each case shows its compliance timeline (Board meeting within 30 days, ADT-1 within 15 days, 21-day notice, etc.).
+- **Edit Templates** (admin): change the wording of any document per case and option, with `{{placeholders}}` filled from the client, CA firm and case details. "Reset to standard" brings back the built-in wording.
 - Preview every document before downloading. Download one Word file, or all of them in a ZIP.
 - Company letterhead and CA letterhead (with logo), or blank space for pre-printed letterhead.
 - Admin only: delete records, add and disable team members, reset passwords, activity log, data backup.
@@ -43,7 +44,7 @@ server.js                 Express server, login, API, Word download
 lib/db.js                 PostgreSQL connection and tables (created automatically)
 lib/docx-builder.js       Builds the .docx files (letterhead, tables, page numbers)
 public/js/docs-content.js Wording of all documents + deadlines (used by server AND browser preview)
-public/js/app.js          Frontend (dashboard, generate, clients, CA firms, team, activity)
+public/js/app.js          Frontend (clients, client workspace, CA firms, templates, team, activity)
 public/css/app.css        NeuSource theme (maroon #8A1412, gold #E6A65A, green #28A745)
 public/index.html         Page shell
 render.yaml               One-click Render setup (web app + database)

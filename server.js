@@ -243,6 +243,32 @@ app.delete('/api/cas/:id', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ---------------- editable document templates ---------------- */
+app.get('/api/templates', requireLogin, async (req, res) => {
+  const { rows } = await db.query('SELECT t.case_type, t.variant, t.doc_id, t.updated_at, u.name AS updated_by FROM templates t LEFT JOIN users u ON u.id=t.updated_by ORDER BY t.updated_at DESC');
+  res.json(rows.map(r => ({ kase: r.case_type, variant: r.variant, docId: r.doc_id, updatedAt: r.updated_at, updatedBy: r.updated_by })));
+});
+app.get('/api/templates/:kase/:docId', requireLogin, async (req, res) => {
+  const { rows } = await db.query('SELECT body, updated_at FROM templates WHERE case_type=$1 AND variant=$2 AND doc_id=$3', [req.params.kase, String(req.query.variant || ''), req.params.docId]);
+  res.json(rows[0] ? { body: rows[0].body, updatedAt: rows[0].updated_at } : null);
+});
+app.put('/api/templates/:kase/:docId', requireAdmin, async (req, res) => {
+  const kase = req.params.kase, docId = String(req.params.docId).slice(0, 40), variant = String((req.body && req.body.variant) || '').slice(0, 200), body = String((req.body && req.body.body) || '');
+  if (!CASES.includes(kase)) return bad(res, 'Unknown case.');
+  if (DC.isFixed(docId)) return bad(res, 'This document has a fixed format and cannot be edited.');
+  if (!body.trim()) return bad(res, 'The template is empty.');
+  if (body.length > 60000) return bad(res, 'The template is too long.');
+  await db.query(`INSERT INTO templates (case_type, variant, doc_id, body, updated_by) VALUES ($1,$2,$3,$4,$5)
+    ON CONFLICT (case_type, variant, doc_id) DO UPDATE SET body=EXCLUDED.body, updated_by=EXCLUDED.updated_by, updated_at=now()`, [kase, variant, docId, body, req.session.user.id]);
+  db.log(req.session.user.id, 'template.save', DC.CASE_SHORT[kase] + ' — ' + docId + (variant ? ' (' + variant + ')' : ''));
+  res.json({ ok: true });
+});
+app.delete('/api/templates/:kase/:docId', requireAdmin, async (req, res) => {
+  await db.query('DELETE FROM templates WHERE case_type=$1 AND variant=$2 AND doc_id=$3', [req.params.kase, String(req.query.variant || ''), req.params.docId]);
+  db.log(req.session.user.id, 'template.reset', DC.CASE_SHORT[req.params.kase] + ' — ' + req.params.docId);
+  res.json({ ok: true });
+});
+
 /* ---------------- Excel import of clients ---------------- */
 app.get('/api/import/template', requireLogin, async (req, res) => {
   const buf = await XL.template();
@@ -399,7 +425,9 @@ app.post('/api/generate', requireLogin, async (req, res) => {
     }
   }
 
-  const all = DC.docDefs(ctx);
+  const tq = await db.query('SELECT doc_id, body FROM templates WHERE case_type=$1 AND variant=$2', [kase, DC.variantKey(kase, f)]);
+  const templates = Object.fromEntries(tq.rows.map(r => [r.doc_id, r.body]));
+  const all = DC.docDefs(ctx, templates);
   const wanted = Array.isArray(b.docIds) && b.docIds.length ? all.filter(x => b.docIds.includes(x.id)) : all;
   if (!wanted.length) return bad(res, 'Select at least one document.');
 

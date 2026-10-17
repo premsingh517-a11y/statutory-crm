@@ -23,16 +23,18 @@
   const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const NUMW = ['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'];
   const BL = '____________';
-  const ord = n => { n = parseInt(n, 10); if (!n) return BL; const s = ['th','st','nd','rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+  const isTok = s => typeof s === 'string' && /^\{\{[^{}]+\}\}$/.test(s);
+  const tokSfx = (s, sfx) => '{{' + s.slice(2, -2) + ':' + sfx + '}}';
+  const ord = n => { if (isTok(n)) return tokSfx(n, 'ord'); n = parseInt(n, 10); if (!n) return BL; const s = ['th','st','nd','rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
   const pd = s => { if (!s) return null; const [y, m, d] = String(s).split('-').map(Number); if (!y || !m || !d) return null; return new Date(Date.UTC(y, m - 1, d)); };
   const iso = dt => dt.toISOString().slice(0, 10);
   const addDays = (s, n) => { const d = pd(s); if (!d) return ''; d.setUTCDate(d.getUTCDate() + n); return iso(d); };
   const addMonths = (s, n) => { const d = pd(s); if (!d) return ''; const day = d.getUTCDate(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n); const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); d.setUTCDate(Math.min(day, last)); return iso(d); };
-  const ld = s => { const d = pd(s); if (!d) return BL; return ord(d.getUTCDate()) + ' ' + MONTHS[d.getUTCMonth()] + ', ' + d.getUTCFullYear(); };
-  const sd = s => { const d = pd(s); if (!d) return '—'; return String(d.getUTCDate()).padStart(2, '0') + '/' + String(d.getUTCMonth() + 1).padStart(2, '0') + '/' + d.getUTCFullYear(); };
-  const dayName = s => { const d = pd(s); return d ? DAYS[d.getUTCDay()] : BL; };
+  const ld = s => { if (isTok(s)) return s; const d = pd(s); if (!d) return BL; return ord(d.getUTCDate()) + ' ' + MONTHS[d.getUTCMonth()] + ', ' + d.getUTCFullYear(); };
+  const sd = s => { if (isTok(s)) return tokSfx(s, 'short'); const d = pd(s); if (!d) return '—'; return String(d.getUTCDate()).padStart(2, '0') + '/' + String(d.getUTCMonth() + 1).padStart(2, '0') + '/' + d.getUTCFullYear(); };
+  const dayName = s => { if (isTok(s)) return tokSfx(s, 'day'); const d = pd(s); return d ? DAYS[d.getUTCDay()] : BL; };
   const yr = s => { const d = pd(s); return d ? d.getUTCFullYear() : null; };
-  const tm = t => { if (!t) return BL; let [h, m] = t.split(':').map(Number); const ap = h >= 12 ? 'P.M.' : 'A.M.'; h = h % 12 || 12; return h + ':' + String(m).padStart(2, '0') + ' ' + ap; };
+  const tm = t => { if (isTok(t)) return t; if (!t) return BL; let [h, m] = t.split(':').map(Number); const ap = h >= 12 ? 'P.M.' : 'A.M.'; h = h % 12 || 12; return h + ':' + String(m).padStart(2, '0') + ' ' + ap; };
   const v = x => (x === undefined || x === null || String(x).trim() === '') ? BL : String(x).trim();
   const oneLine = s => String(s || '').replace(/\s*\n\s*/g, ', ').trim();
   const fyStart = s => { const d = pd(s); if (!d) return null; return d.getUTCMonth() >= 3 ? d.getUTCFullYear() : d.getUTCFullYear() - 1; };
@@ -43,6 +45,11 @@
   const parseDMY = s => { s = String(s || '').trim(); let m = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/.exec(s); if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'); m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); return m ? s : ''; };
   const amt = x => (x === undefined || x === null || String(x).trim() === '') ? '–' : String(x).trim();
   const fyLabel = end => { const y = yr(end); return y ? (y - 1) + '-' + String(y).slice(2) : BL; };
+  // Templates: T() records a computed phrase under a name; in template mode it returns {{name}} instead
+  const T = (x, name, val) => { (x.vals || (x.vals = {}))[name] = val; return x.T ? '{{' + name + '}}' : val; };
+  const F = (x, key, def) => T(x, key + 'Text', x.f[key] || def); // optional text field with standard wording
+  let GID = 0;
+  const tag = (blocks, name) => { const id = ++GID; blocks.forEach(b => { b.grp = name; b.gid = id; }); return blocks; };
 
   const CASES = ['first', 'agm', 'casual', 'dirapp', 'dirres', 'annual', 'allot', 'authcap', 'transfer', 'regoffice', 'inc20a', 'dpt3', 'msme1', 'stk2', 'llp', 'registers'];
   const CASE_TITLE = {
@@ -74,10 +81,11 @@
     const f = x.f, dirs = x.c.directors || [];
     x.K = x.kase;
     x.venue = s => s || oneLine(x.c.addr);
-    x.firmDesc = (x.a.firm ? x.a.firm : BL) + ', Chartered Accountants (Firm Registration No. ' + v(x.a.frn) + ')';
-    x.remun = f.remun
+    x.T = !!ctx.T; x.vals = {};
+    x.firmDesc = T(x, 'auditorFirmDescription', (x.a.firm ? x.a.firm : BL) + ', Chartered Accountants (Firm Registration No. ' + v(x.a.frn) + ')');
+    x.remun = T(x, 'remuneration', f.remun
       ? 'at a remuneration of ' + f.remun + ' plus applicable taxes and reimbursement of out-of-pocket expenses'
-      : 'at such remuneration as may be mutually agreed upon between the Board of Directors and the Auditors';
+      : 'at such remuneration as may be mutually agreed upon between the Board of Directors and the Auditors');
     x.isRe = x.kase === 'agm' && f.apptType === 're';
     x.resign = x.kase === 'casual' && f.reason !== 'other';
     // second signing director (annual filing) and resigning director (from client master)
@@ -86,15 +94,16 @@
     if (x.ds.length) x.d = x.ds[0];
     x.d2 = x.ds[1] || (f.dir2Index !== undefined && f.dir2Index !== '' ? (dirs[parseInt(f.dir2Index, 10)] || {}) : {});
     x.res = f.resIndex !== undefined && f.resIndex !== '' ? (dirs[parseInt(f.resIndex, 10)] || {}) : {};
+    if (x.T) { x.res = { name: '{{resigningDirector}}', din: '{{resigningDirectorDin}}', desig: 'Director' }; if (!x.d2.name) x.d2 = { name: '{{director2}}', din: '{{director2Din}}', desig: 'Director' }; }
     // new director (appointment)
     const t = f.appTitle || 'Mr.';
     x.app = { title: t, name: f.appName || '', din: f.appDin || '', father: f.appFather || '', dob: f.appDob || '', addr: f.appAddr || '', email: f.appEmail || '',
       mobile: f.appMobile || '', pan: f.appPan || '', occ: f.appOcc || '', nat: f.appNat || 'Indian', qual: f.appQual || '', exp: f.appExp || '', sign: f.apptSign || null };
-    x.app.full = (t ? t + ' ' : '') + v(x.app.name);
-    x.app.his = t === 'Mr.' ? 'his' : (t === 'Ms.' || t === 'Mrs.') ? 'her' : 'his/her';
-    x.app.he = t === 'Mr.' ? 'he' : (t === 'Ms.' || t === 'Mrs.') ? 'she' : 'he/she';
-    x.app.sonOf = t === 'Mr.' ? 'son of' : (t === 'Ms.' || t === 'Mrs.') ? 'daughter of' : 'son/daughter of';
-    x.app.cat = f.appCat === 'exec' ? 'Executive' : 'Non-Executive';
+    x.app.full = T(x, 'newDirector', (t ? t + ' ' : '') + v(x.app.name));
+    x.app.his = T(x, 'his', t === 'Mr.' ? 'his' : (t === 'Ms.' || t === 'Mrs.') ? 'her' : 'his/her');
+    x.app.he = T(x, 'he', t === 'Mr.' ? 'he' : (t === 'Ms.' || t === 'Mrs.') ? 'she' : 'he/she');
+    x.app.sonOf = T(x, 'sonOf', t === 'Mr.' ? 'son of' : (t === 'Ms.' || t === 'Mrs.') ? 'daughter of' : 'son/daughter of');
+    x.app.cat = T(x, 'directorCategory', f.appCat === 'exec' ? 'Executive' : 'Non-Executive');
     x.egmApp = x.kase === 'dirapp' && f.apptMode === 'egm';
     x.regularise = x.kase === 'dirapp' && f.apptMode !== 'egm' && f.regularise === 'yes';
     x.appDate = x.kase === 'dirapp' ? (x.egmApp ? f.egmDate : f.bmDate) : '';
@@ -110,10 +119,11 @@
     x.isOPC = x.c.type === 'opc';
     return x;
   }
-  const prevDesc = f => v(f.prevFirm) + ', Chartered Accountants' + (f.prevFrn ? ' (Firm Registration No. ' + f.prevFrn + ')' : '');
-  const vacancyText = x => x.f.reason === 'other' ? (v(x.f.reasonText) + ' of ' + prevDesc(x.f)) : ('the resignation of ' + prevDesc(x.f));
+  const prevDesc = f => isTok(f.prevFirm) ? '{{previousAuditor}}' : v(f.prevFirm) + ', Chartered Accountants' + (f.prevFrn ? ' (Firm Registration No. ' + f.prevFrn + ')' : '');
+  const vacancyText = x => T(x, 'vacancyReason', x.f.reason === 'other' ? (v(x.f.reasonText) + ' of ' + prevDesc(x.f)) : ('the resignation of ' + prevDesc(x.f)));
   function meetingDate(x) { const f = x.f; return x.kase === 'first' ? f.bmDate : x.kase === 'agm' ? f.agmDate : (x.resign ? f.egmDate : f.bmDate); }
-  function termText(x, mode) {
+  function termText(x, mode) { return T(x, 'auditorTerm' + (mode ? mode[0].toUpperCase() + mode.slice(1) : ''), termText0(x, mode)); }
+  function termText0(x, mode) {
     const f = x.f;
     if (x.kase === 'first') {
       if (mode === 'consent') return 'under Section 139(6) of the Companies Act, 2013, to hold office till the conclusion of the first Annual General Meeting of the Company';
@@ -127,7 +137,7 @@
   }
 
   /* ---------- reusable blocks ---------- */
-  const addrLines = s => String(s || BL).split('\n').map(l => l.trim()).filter(Boolean).map(l => ({ p: l, after: 0 }));
+  const addrLines = s => tag(String(s || BL).split('\n').map(l => l.trim()).filter(Boolean).map(l => ({ p: l, after: 0 })), 'address');
   const subj = t => ({ p: '**Subject: ' + t + '**', al: 'j' });
   const numbered = (items, start) => items.map((t, i) => ({ p: (i + (start || 1)) + '.\t' + t, hang: true, al: 'j' }));
   const lettered = items => items.map((t, i) => ({ p: '(' + 'abcdefghij'[i] + ')\t' + t, hang: true, al: 'j' }));
@@ -138,21 +148,22 @@
     const out = [{ gap: 1 }, { p: lead || ('For ' + c.name), b: true, keep: true }];
     list.forEach((d, i) => { if (i) out.push({ gap: 1 }); out.push({ sign: d.sign || null }, { p: v(d.name), b: true, after: 0, keep: true }, { p: v(d.desig || 'Director'), after: 0, keep: true }, { p: 'DIN: ' + v(d.din), after: 0, keep: true }); });
     out.push({ p: 'Place: ' + v(f.place), after: 0, keep: true }, { p: 'Date: ' + ld(date), after: 0 });
-    return out;
+    return tag(out, 'signature');
   }
   // "X, Director (DIN), be and is hereby authorised" — or several selected directors, severally authorised
-  const authWho = x => x.ds && x.ds.length > 1
+  const authWho = x => T(x, 'authorisedDirectors', authWho0(x));
+  const authWho0 = x => x.ds && x.ds.length > 1
     ? x.ds.map(d => v(d.name) + ' (DIN: ' + v(d.din) + ')').join(', ').replace(/, ([^,]*)$/, ' and $1') + ', Directors of the Company, be and are hereby severally authorised'
     : v(x.d.name) + ', ' + v(x.d.desig || 'Director') + ' (DIN: ' + v(x.d.din) + '), be and is hereby authorised';
   function sigTwo(x, date) { // Board's report / financial statements: two directors (one for OPC)
     const one = d => [{ sign: d.sign || null }, { p: v(d.name), b: true, after: 0, keep: true }, { p: v(d.desig || 'Director'), after: 0, keep: true }, { p: 'DIN: ' + v(d.din), after: 0, keep: true }];
-    return [{ gap: 1 }, { p: 'For and on behalf of the Board of Directors\nFor ' + x.c.name, b: true, keep: true }, ...one(x.d),
-      ...(x.isOPC ? [] : [{ gap: 1 }, ...one(x.d2)]), { gap: 1 }, { p: 'Place: ' + v(x.f.place), after: 0, keep: true }, { p: 'Date: ' + ld(date), after: 0 }];
+    return tag([{ gap: 1 }, { p: 'For and on behalf of the Board of Directors\nFor ' + x.c.name, b: true, keep: true }, ...one(x.d),
+      ...(x.isOPC ? [] : [{ gap: 1 }, ...one(x.d2)]), { gap: 1 }, { p: 'Place: ' + v(x.f.place), after: 0, keep: true }, { p: 'Date: ' + ld(date), after: 0 }], 'board-signature');
   }
   function sigPerson(p, date, place, extra) {
-    return [{ gap: 1 }, { sign: p.sign || null }, { p: 'Signature: ____________________', after: 0, keep: true }, { p: 'Name: ' + v(p.full || p.name), after: 0, keep: true },
+    return tag([{ gap: 1 }, { sign: p.sign || null }, { p: 'Signature: ____________________', after: 0, keep: true }, { p: 'Name: ' + v(p.full || p.name), after: 0, keep: true },
       ...(p.din !== undefined ? [{ p: 'DIN: ' + v(p.din), after: 0, keep: true }] : []), ...(extra || []).map(t => ({ p: t, after: 0, keep: true })),
-      { p: 'Place: ' + v(place), after: 0, keep: true }, { p: 'Date: ' + ld(date), after: 0 }];
+      { p: 'Place: ' + v(place), after: 0, keep: true }, { p: 'Date: ' + ld(date), after: 0 }], 'person-signature');
   }
   const toBoard = x => [{ p: 'To,', after: 0 }, { p: 'The Board of Directors', after: 0 }, { p: x.c.name, b: true, after: 0 }, ...addrLines(x.c.addr), { gap: 1 }];
   const toAuditor = (firm, addr, attn) => [{ p: 'To,', after: 0 }, { p: v(firm), b: true, after: 0 }, { p: 'Chartered Accountants', after: 0 }, ...addrLines(addr), ...(attn ? [{ p: 'Kind Attn.: ' + attn, after: 0 }] : []), { gap: 1 }];
@@ -171,7 +182,7 @@
     const D = f[pre + 'Date'], T = f[pre + 'Time'], V = f[pre + 'Venue'], N = f[pre + 'Notice'];
     return { id: id || 'bmnotice', title: title || 'Notice of Board Meeting', sub: 'Sec 173(3) & Secretarial Standard-1 (ICSI)', lh: LH_CO, build: () => [
       { p: 'Date: ' + ld(N), al: 'r' }, { p: 'To,', after: 0 }, { p: 'All the Directors of ' + c.name, after: 0 },
-      ...(c.directors || []).map(d => ({ p: d.name + (d.din ? ' (DIN: ' + d.din + ')' : ''), after: 0 })), { gap: 1 },
+      ...tag((c.directors || []).map(d => ({ p: d.name + (d.din ? ' (DIN: ' + d.din + ')' : ''), after: 0 })), 'directors'), { gap: 1 },
       { p: 'NOTICE OF MEETING OF THE BOARD OF DIRECTORS', b: true, al: 'c', u: true },
       { p: 'Notice is hereby given that a Meeting of the Board of Directors of ' + c.name + ' will be held on ' + dayName(D) + ', ' + ld(D) + ' at ' + tm(T) + ' at ' + oneLine(x.venue(V)) + ', to transact the following business:', al: 'j' },
       { p: 'AGENDA', b: true, al: 'c' }, ...numbered(agenda),
@@ -212,7 +223,7 @@
   function resBoardCasual(x) {
     const f = x.f, res = x.resign, out = [];
     if (res) out.push({ p: '**1. TAKING NOTE OF RESIGNATION OF STATUTORY AUDITORS**', u: true },
-      { p: '“**RESOLVED THAT** the resignation of ' + prevDesc(f) + ' from the office of Statutory Auditors of the Company with effect from ' + ld(f.vacDate) + ', tendered vide their letter dated ' + ld(f.resignLetter || f.vacDate) + ', be and is hereby taken note of.”' });
+      { p: '“**RESOLVED THAT** the resignation of ' + prevDesc(f) + ' from the office of Statutory Auditors of the Company with effect from ' + ld(f.vacDate) + ', tendered vide their letter dated ' + T(x, 'resignationLetterDate', ld(f.resignLetter || f.vacDate)) + ', be and is hereby taken note of.”' });
     out.push({ p: '**' + (res ? '2. ' : '') + 'APPOINTMENT OF STATUTORY AUDITORS TO FILL THE CASUAL VACANCY**', u: true },
       { p: '“**RESOLVED THAT** pursuant to the provisions of Section 139(8) and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Audit and Auditors) Rules, 2014 ' + STAT + ', and on the basis of the written consent and certificate of eligibility received under Sections 139(1) and 141 of the Act, ' + x.firmDesc + ', be and are hereby appointed as the Statutory Auditors of the Company ' + termText(x) + ', ' + x.remun + (res ? ', subject to the approval of the members of the Company at a general meeting to be held within three months of the recommendation of the Board' : '') + '.' });
     if (res) out.push({ p: '**RESOLVED FURTHER THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ' to seek the approval of the members for the above appointment, and the draft Notice convening the said meeting, along with the Explanatory Statement under Section 102 of the Act, as placed before the Board, be and is hereby approved.' });
@@ -233,7 +244,7 @@
 
   function auditorDocs(x) {
     const { c, a, f } = x, K = x.kase, D = [];
-    const apptName = (x.isRe ? 're-appointment' : 'appointment') + ' as ' + (K === 'first' ? 'First ' : '') + 'Statutory Auditors';
+    const apptName = T(x, 'appointmentName', (x.isRe ? 're-appointment' : 'appointment') + ' as ' + (K === 'first' ? 'First ' : '') + 'Statutory Auditors');
 
     const consent = { id: 'consent', title: 'Consent & Certificate of Eligibility', sub: 'From auditor — Sec 139(1), 141 & Rule 4', lh: LH_CA, build: () => {
       const date = f.consentDate;
@@ -254,7 +265,7 @@
     } };
 
     const prevComm = { id: 'prevcomm', title: 'Communication with Previous Auditor', sub: 'ICAI — Clause (8), Part I, First Schedule, CA Act 1949', lh: LH_CA, build: () => [
-      { p: 'Date: ' + ld(f.consentDate), al: 'r' }, { p: '**By Registered Post A.D. / Email**' }, ...toAuditor(f.prevFirm, (f.prevAddr || '') + (f.prevEmail ? '\nEmail: ' + f.prevEmail : '')),
+      { p: 'Date: ' + ld(f.consentDate), al: 'r' }, { p: '**By Registered Post A.D. / Email**' }, ...toAuditor(f.prevFirm, F(x, 'prevAddr', '') + (f.prevEmail ? '\nEmail: ' + f.prevEmail : '')),
       subj('Communication under Clause (8) of Part I of the First Schedule to the Chartered Accountants Act, 1949 — ' + c.name + ' (CIN: ' + v(c.cin) + ')'),
       { p: 'Dear Sir / Madam,' },
       { p: 'We have been approached by ' + c.name + ' (“the Company”) to accept appointment as its Statutory Auditors' + (K === 'casual' ? ' to fill the casual vacancy in the office of the Statutory Auditors' : '') + '. We understand that you ' + (K === 'casual' ? 'were' : 'are') + ' the Statutory Auditors of the Company.', al: 'j' },
@@ -309,7 +320,7 @@
       out.push(...sigCompany(x, date, 'By Order of the Board\nFor ' + c.name), { gap: 1 }, { p: 'NOTES:', b: true, u: true },
         ...numbered(kind === 'agm' ? GM_NOTES : ['An Explanatory Statement pursuant to Section 102(1) of the Companies Act, 2013, setting out the material facts concerning the business under Item No. 1, is annexed hereto.', ...GM_NOTES]));
       if (kind === 'egm') out.push({ pb: true }, { p: 'EXPLANATORY STATEMENT PURSUANT TO SECTION 102(1) OF THE COMPANIES ACT, 2013', b: true, al: 'c' }, { p: 'Item No. 1', b: true, u: true },
-        { p: prevDesc(f) + ', the Statutory Auditors of the Company, have resigned from the said office with effect from ' + ld(f.vacDate) + ' vide their letter dated ' + ld(f.resignLetter || f.vacDate) + ', resulting in a casual vacancy in the office of the Statutory Auditors of the Company.', al: 'j' },
+        { p: prevDesc(f) + ', the Statutory Auditors of the Company, have resigned from the said office with effect from ' + ld(f.vacDate) + ' vide their letter dated ' + T(x, 'resignationLetterDate', ld(f.resignLetter || f.vacDate)) + ', resulting in a casual vacancy in the office of the Statutory Auditors of the Company.', al: 'j' },
         { p: 'Pursuant to Section 139(8) of the Companies Act, 2013, the Board of Directors at its meeting held on ' + ld(f.bmDate) + ' appointed ' + x.firmDesc + ' as the Statutory Auditors of the Company to fill the said casual vacancy, to hold office till the conclusion of the next Annual General Meeting of the Company. As the casual vacancy has been caused by the resignation of the auditor, the appointment is required to be approved by the members of the Company at a general meeting convened within three months of the recommendation of the Board.', al: 'j' },
         { p: v(a.firm) + ' have given their written consent to act as the Statutory Auditors and have confirmed that their appointment, if approved, will be in accordance with the conditions prescribed under Sections 139 and 141 of the Act.', al: 'j' },
         { p: 'The Board recommends the Ordinary Resolution set out at Item No. 1 of the Notice for approval of the members.', al: 'j' },
@@ -362,11 +373,11 @@
   }
   function sigCA(x, date) {
     const { a, f } = x;
-    return [{ gap: 1 }, { p: 'For ' + v(a.firm), b: true, after: 0, keep: true }, { p: 'Chartered Accountants', after: 0, keep: true },
+    return tag([{ gap: 1 }, { p: 'For ' + v(a.firm), b: true, after: 0, keep: true }, { p: 'Chartered Accountants', after: 0, keep: true },
       { p: 'FRN: ' + v(a.frn), after: 0, keep: true }, { gap: 2 }, { p: '(' + v(a.partner) + ')', b: true, after: 0, keep: true },
       { p: v(a.desig || 'Partner'), after: 0, keep: true }, { p: 'Membership No.: ' + v(a.mno), after: 0, keep: true },
       ...(f.udin ? [{ p: 'UDIN: ' + f.udin, after: 0, keep: true }] : []),
-      { p: 'Place: ' + v(f.place), after: 0, keep: true }, { p: 'Date: ' + ld(date), after: 0 }];
+      { p: 'Place: ' + v(f.place), after: 0, keep: true }, { p: 'Date: ' + ld(date), after: 0 }], 'ca-signature');
   }
 
   /* =====================================================================
@@ -475,12 +486,12 @@
     D.push({ id: 'apptletter', title: 'Letter of Appointment to Director', sub: 'Issued by the company — attachment to e-Form DIR-12', lh: LH_CO, build: () => [
       { p: 'Date: ' + ld(appDate), al: 'r' }, { p: 'To,', after: 0 }, { p: p.full, b: true, after: 0 }, ...addrLines(p.addr), { gap: 1 },
       subj('Letter of appointment as ' + (x.egmApp ? 'Director' : 'Additional Director (' + p.cat + ')') + ' of ' + c.name),
-      { p: 'Dear ' + (p.title || 'Sir / Madam') + ' ' + v(p.name).split(' ').slice(-1)[0] + ',' },
+      { p: T(x, 'salutation', 'Dear ' + (p.title || 'Sir / Madam') + ' ' + v(p.name).split(' ').slice(-1)[0] + ',') },
       { p: 'We are pleased to inform you that ' + (x.egmApp ? 'the members of the Company at the Extraordinary General Meeting held on ' + ld(f.egmDate) + ' have appointed you as a Director of the Company with effect from ' + ld(f.egmDate) + ', ' + (f.retire === 'yes' ? 'liable' : 'not liable') + ' to retire by rotation.' : 'the Board of Directors of the Company at its meeting held on ' + ld(f.bmDate) + ' has appointed you as an Additional Director (' + p.cat + ') of the Company with effect from ' + ld(f.bmDate) + ' under Section 161(1) of the Companies Act, 2013. You will hold office up to the date of the next Annual General Meeting of the Company, or the last date on which it should have been held, whichever is earlier, unless appointed as a Director by the members.'), al: 'j' },
       { p: 'The terms of your appointment are as follows:', b: true },
       ...numbered([
         'Your appointment is subject to the provisions of the Companies Act, 2013 (“the Act”), the rules made thereunder and the Articles of Association of the Company.',
-        'Remuneration: ' + (f.appRemun || 'You will not be entitled to any remuneration other than sitting fees for attending meetings of the Board, if any, as may be decided by the Board, and reimbursement of expenses incurred for attending such meetings.'),
+        'Remuneration: ' + F(x, 'appRemun', 'You will not be entitled to any remuneration other than sitting fees for attending meetings of the Board, if any, as may be decided by the Board, and reimbursement of expenses incurred for attending such meetings.'),
         'Duties: As a Director, you shall discharge the duties specified in Section 166 of the Act, namely to act in accordance with the Articles of the Company; to act in good faith in order to promote the objects of the Company for the benefit of its members as a whole, and in the best interests of the Company, its employees, shareholders, the community and the environment; to exercise your duties with due and reasonable care, skill and diligence and independent judgment; not to be involved in a situation in which you may have a direct or indirect interest that conflicts with the interest of the Company; not to achieve or attempt to achieve any undue gain or advantage; and not to assign your office.',
         'Disclosures: You are required to disclose your interest in other entities in Form MBP-1 at the first meeting of the Board in every financial year and whenever there is any change, and to give intimation in Form DIR-8 under Section 164(2). You are also required to complete your DIN KYC (Form DIR-3 KYC) every year as prescribed.',
         'Confidentiality: You shall keep confidential all information relating to the Company that comes to your knowledge as a Director, except where disclosure is required by law.',
@@ -507,9 +518,9 @@
      DIRECTOR RESIGNATION (dirres)
      ===================================================================== */
   function dirResDocs(x) {
-    const { c, f } = x, r = x.res, eff = x.resEff, D = [];
-    const effText = f.resEffDate && f.resReceipt && f.resEffDate > f.resReceipt ? 'with effect from ' + ld(f.resEffDate) : 'with effect from the date of receipt of this letter by the Company';
-    const reason = f.resReason || 'personal reasons and pre-occupation';
+    const { c, f } = x, r = x.res, eff = x.resEff, D = [], EFF = T(x, 'effectiveDate', ld(x.resEff));
+    const effText = T(x, 'effectiveFromText', f.resEffDate && f.resReceipt && f.resEffDate > f.resReceipt ? 'with effect from ' + ld(f.resEffDate) : 'with effect from the date of receipt of this letter by the Company');
+    const reason = F(x, 'resReason', 'personal reasons and pre-occupation');
 
     D.push({ id: 'resletter', title: 'Resignation Letter by Director', sub: 'Sec 168(1) — signed by the resigning director', lh: LH_PLAIN, build: () => [
       { p: 'Date: ' + ld(f.resLetter), al: 'r' }, ...toBoard(x), subj('Resignation from the office of Director'),
@@ -525,7 +536,7 @@
     D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolution', sub: 'Taking note of resignation — record / DIR-12', lh: LH_CO, build: () => [
       ctcHead(x, 'RESOLUTION PASSED AT THE MEETING OF THE BOARD OF DIRECTORS', f.bmDate, f.bmTime, x.venue(f.bmVenue)), { gap: 1 },
       { p: '**TAKING NOTE OF RESIGNATION OF ' + String(v(r.name)).toUpperCase() + ' (DIN: ' + v(r.din) + ') FROM THE OFFICE OF DIRECTOR**', u: true },
-      { p: '“**RESOLVED THAT** pursuant to the provisions of Section 168 and other applicable provisions, if any, of the Companies Act, 2013 read with Rule 15 of the Companies (Appointment and Qualification of Directors) Rules, 2014 ' + STAT + ', the resignation tendered by ' + v(r.name) + ' (DIN: ' + v(r.din) + ') from the office of Director of the Company vide letter dated ' + ld(f.resLetter) + ', received by the Company on ' + ld(f.resReceipt) + ', be and is hereby taken note of, and the cessation of ' + v(r.name) + ' as a Director be effective from ' + ld(eff) + '.', al: 'j' },
+      { p: '“**RESOLVED THAT** pursuant to the provisions of Section 168 and other applicable provisions, if any, of the Companies Act, 2013 read with Rule 15 of the Companies (Appointment and Qualification of Directors) Rules, 2014 ' + STAT + ', the resignation tendered by ' + v(r.name) + ' (DIN: ' + v(r.din) + ') from the office of Director of the Company vide letter dated ' + ld(f.resLetter) + ', received by the Company on ' + ld(f.resReceipt) + ', be and is hereby taken note of, and the cessation of ' + v(r.name) + ' as a Director be effective from ' + EFF + '.', al: 'j' },
       { p: '**RESOLVED FURTHER THAT** the Board places on record its sincere appreciation for the valuable contribution made by ' + v(r.name) + ' during the tenure as a Director of the Company.', al: 'j' },
       { p: '**RESOLVED FURTHER THAT** any Director of the Company be and is hereby severally authorised to sign and file e-Form DIR-12 with the Registrar of Companies within thirty days of the resignation, to make the necessary entries in the Register of Directors and Key Managerial Personnel maintained under Section 170 of the Act, and to do all such acts, deeds, matters and things as may be necessary to give effect to this resolution.”', al: 'j' },
       { p: 'Certified True Copy', b: true }, ...sigCompany(x, f.bmDate)] });
@@ -534,7 +545,7 @@
       { p: 'Date: ' + ld(f.resReceipt), al: 'r' }, { p: 'To,', after: 0 }, { p: v(r.name), b: true, after: 0 }, { p: 'DIN: ' + v(r.din), after: 0 }, { gap: 1 },
       subj('Acknowledgement of your resignation from the office of Director'),
       { p: 'Dear Sir / Madam,' },
-      { p: 'We acknowledge receipt on ' + ld(f.resReceipt) + ' of your letter dated ' + ld(f.resLetter) + ' tendering your resignation from the office of Director of ' + c.name + '. In terms of Section 168(2) of the Companies Act, 2013, your resignation is effective from ' + ld(eff) + '.', al: 'j' },
+      { p: 'We acknowledge receipt on ' + ld(f.resReceipt) + ' of your letter dated ' + ld(f.resLetter) + ' tendering your resignation from the office of Director of ' + c.name + '. In terms of Section 168(2) of the Companies Act, 2013, your resignation is effective from ' + EFF + '.', al: 'j' },
       { p: 'The Company will file the necessary intimation in e-Form DIR-12 with the Registrar of Companies within the prescribed time. You may, if you so wish, also forward a copy of your resignation along with detailed reasons to the Registrar in Form DIR-11 within thirty days of resignation, as permitted under the proviso to Section 168(1).', al: 'j' },
       { p: 'The Board places on record its appreciation of your contribution to the Company.', al: 'j' },
       ...signoff(), ...sigCompany(x, f.resReceipt)] });
@@ -560,57 +571,59 @@
   /* =====================================================================
      ANNUAL FILING — AOC-4 & MGT-7 / MGT-7A (annual)
      ===================================================================== */
-  function fsWords(x) { // components of financial statements (cash flow not required for small company / OPC — Sec 2(40))
+ function fsWords(x) { // components of financial statements (cash flow not required for small company / OPC — Sec 2(40))
+    return T(x, 'financialStatementsList', fsWords0(x)); }
+  function fsWords0(x) {
     return 'the Balance Sheet as at ' + ld(x.fyEnd) + ', the Statement of Profit and Loss' + (x.small ? '' : ', the Cash Flow Statement') + ' for the ' + (x.firstFY ? 'period from ' + ld(x.fyFrom) + ' to ' + ld(x.fyEnd) : 'financial year ended on that date') + ' and the notes thereto';
   }
   function bmGapOK(x) { for (let i = 1; i < x.bms.length; i++) { if ((pd(x.bms[i]) - pd(x.bms[i - 1])) / 864e5 > 120) return false; } return true; }
   function resAdoption(x) {
-    return [{ p: '“**RESOLVED THAT** the Audited Financial Statements of the Company for the ' + (x.firstFY ? 'period' : 'financial year') + ' ended ' + ld(x.fyEnd) + ', comprising ' + fsWords(x) + ', together with the Reports of the Board of Directors and the Auditors thereon, be and are hereby received, considered and adopted.”' }];
+    return [{ p: '“**RESOLVED THAT** the Audited Financial Statements of the Company for the ' + T(x, 'periodWord', x.firstFY ? 'period' : 'financial year') + ' ended ' + ld(x.fyEnd) + ', comprising ' + fsWords(x) + ', together with the Reports of the Board of Directors and the Auditors thereon, be and are hereby received, considered and adopted.”' }];
   }
   function boardsReport(x) {
     const { c, a, f } = x, out = [], full = !x.small;
     const unit = f.amtUnit || 'Amount in Rs.';
     let n = 0; const sec = (t, ...paras) => { out.push({ p: (++n) + '. ' + t.toUpperCase(), b: true, keep: true }, ...paras.map(p => typeof p === 'string' ? { p, al: 'j' } : p)); };
     out.push({ p: 'BOARD’S REPORT', b: true, al: 'c', sz: 28 }, { p: 'To,', after: 0 }, { p: 'The Members,', after: 0 }, { p: c.name, b: true },
-      { p: 'Your Directors have pleasure in presenting their Report on the business and operations of the Company together with the Audited Financial Statements for the ' + (x.firstFY ? 'period from ' + ld(x.fyFrom) + ' to ' + ld(x.fyEnd) : 'financial year ended ' + ld(x.fyEnd)) + '.' + (x.small ? ' This Report is prepared in accordance with Section 134 of the Companies Act, 2013 read with Rule 8A of the Companies (Accounts) Rules, 2014, applicable to ' + (x.isOPC ? 'One Person Companies' : 'small companies') + '.' : ''), al: 'j' });
+      { p: 'Your Directors have pleasure in presenting their Report on the business and operations of the Company together with the Audited Financial Statements for the ' + T(x, 'reportPeriod', x.firstFY ? 'period from ' + ld(x.fyFrom) + ' to ' + ld(x.fyEnd) : 'financial year ended ' + ld(x.fyEnd)) + '.' + (x.small ? ' This Report is prepared in accordance with Section 134 of the Companies Act, 2013 read with Rule 8A of the Companies (Accounts) Rules, 2014, applicable to ' + (x.isOPC ? 'One Person Companies' : 'small companies') + '.' : ''), al: 'j' });
     sec('Financial summary / highlights', { p: '(' + unit + ')', al: 'r', after: 0 },
       { tbl: [['Particulars', 'FY ' + fyLabel(x.fyEnd), x.firstFY ? 'Previous year' : 'FY ' + fyLabel(x.prevFyEnd)],
         ['Total revenue (including other income)', amt(f.revCur), x.firstFY ? '–' : amt(f.revPrev)], ['Profit / (Loss) before tax', amt(f.pbtCur), x.firstFY ? '–' : amt(f.pbtPrev)],
         ['Less: Tax expense', amt(f.taxCur), x.firstFY ? '–' : amt(f.taxPrev)], ['Profit / (Loss) after tax', amt(f.patCur), x.firstFY ? '–' : amt(f.patPrev)]], cols: [50, 25, 25], head: true });
-    sec('State of company’s affairs', f.affairs || ('During the year under review, the Company recorded total revenue of ' + (f.revCur ? 'Rs. ' + f.revCur : BL) + ' and a profit / (loss) after tax of ' + (f.patCur ? 'Rs. ' + f.patCur : BL) + '. The Directors are continuously looking for avenues for the future growth of the Company.'));
-    sec('Change in the nature of business', f.natureChange || 'There was no change in the nature of business of the Company during the year under review.');
-    sec('Dividend', f.dividend || 'The Board of Directors does not recommend any dividend for the year under review.');
-    sec('Transfer to reserves', f.reserves || 'The Company has not transferred any amount to the reserves during the year under review.');
-    sec('Material changes and commitments', f.material || 'There are no material changes and commitments affecting the financial position of the Company which have occurred between the end of the financial year of the Company to which the financial statements relate and the date of this Report.');
-    const bmText = x.bms.length ? 'During the year under review, the Board of Directors met ' + x.bms.length + ' (' + (NUMW[x.bms.length] || x.bms.length) + ') time' + (x.bms.length > 1 ? 's' : '') + ', on ' + x.bms.map(ld).join('; ') + '.' + (!x.small && bmGapOK(x) && x.bms.length > 1 ? ' The intervening gap between two consecutive meetings did not exceed one hundred and twenty days, as prescribed under Section 173(1) of the Companies Act, 2013.' : x.small ? ' The meetings were held in compliance with Section 173 of the Companies Act, 2013.' : '') : 'During the year under review, the Board of Directors met ' + BL + ' times.';
-    sec('Number of meetings of the Board', bmText);
+    sec('State of company’s affairs', T(x, 'affairsText', f.affairs || ('During the year under review, the Company recorded total revenue of ' + (f.revCur ? 'Rs. ' + f.revCur : BL) + ' and a profit / (loss) after tax of ' + (f.patCur ? 'Rs. ' + f.patCur : BL) + '. The Directors are continuously looking for avenues for the future growth of the Company.')));
+    sec('Change in the nature of business', F(x, 'natureChange', 'There was no change in the nature of business of the Company during the year under review.'));
+    sec('Dividend', F(x, 'dividend', 'The Board of Directors does not recommend any dividend for the year under review.'));
+    sec('Transfer to reserves', F(x, 'reserves', 'The Company has not transferred any amount to the reserves during the year under review.'));
+    sec('Material changes and commitments', F(x, 'material', 'There are no material changes and commitments affecting the financial position of the Company which have occurred between the end of the financial year of the Company to which the financial statements relate and the date of this Report.'));
+    const bmText0 = x.bms.length ? 'During the year under review, the Board of Directors met ' + x.bms.length + ' (' + (NUMW[x.bms.length] || x.bms.length) + ') time' + (x.bms.length > 1 ? 's' : '') + ', on ' + x.bms.map(ld).join('; ') + '.' + (!x.small && bmGapOK(x) && x.bms.length > 1 ? ' The intervening gap between two consecutive meetings did not exceed one hundred and twenty days, as prescribed under Section 173(1) of the Companies Act, 2013.' : x.small ? ' The meetings were held in compliance with Section 173 of the Companies Act, 2013.' : '') : 'During the year under review, the Board of Directors met ' + BL + ' times.';
+    sec('Number of meetings of the Board', T(x, 'boardMeetingsText', bmText0));
     sec('Directors and Key Managerial Personnel', 'As on the date of this Report, the Board of Directors of the Company comprises:',
       { tbl: [['S. No.', 'Name', 'DIN', 'Designation'], ...(c.directors || []).map((d, i) => [String(i + 1), d.name, d.din || '—', d.desig || 'Director'])], cols: [8, 46, 20, 26], head: true },
-      f.dirChanges || 'There was no change in the composition of the Board of Directors during the year under review.');
-    if (full) sec('Deposits', f.deposits || 'The Company has not accepted any deposits within the meaning of Sections 73 and 76 of the Companies Act, 2013 read with the Companies (Acceptance of Deposits) Rules, 2014 during the year under review.');
-    if (full) sec('Particulars of loans, guarantees or investments', f.loans186 || 'The Company has not given any loans or guarantees, or provided any security, or made any investments covered under the provisions of Section 186 of the Companies Act, 2013 during the year under review.');
+      F(x, 'dirChanges', 'There was no change in the composition of the Board of Directors during the year under review.'));
+    if (full) sec('Deposits', F(x, 'deposits', 'The Company has not accepted any deposits within the meaning of Sections 73 and 76 of the Companies Act, 2013 read with the Companies (Acceptance of Deposits) Rules, 2014 during the year under review.'));
+    if (full) sec('Particulars of loans, guarantees or investments', F(x, 'loans186', 'The Company has not given any loans or guarantees, or provided any security, or made any investments covered under the provisions of Section 186 of the Companies Act, 2013 during the year under review.'));
     sec('Particulars of contracts or arrangements with related parties', f.rpt === 'yes'
       ? 'All contracts or arrangements entered into by the Company with related parties referred to in Section 188(1) of the Companies Act, 2013 during the year under review were in the ordinary course of business and on an arm’s length basis. The particulars of such contracts or arrangements are given in Form AOC-2, annexed to this Report as **Annexure-I**.'
       : 'There were no contracts or arrangements entered into by the Company with related parties referred to in Section 188(1) of the Companies Act, 2013 during the year under review. Hence, the disclosure in Form AOC-2 is not applicable.');
     sec('Annual return', c.web ? 'Pursuant to Section 92(3) read with Section 134(3)(a) of the Companies Act, 2013, the Annual Return of the Company for the financial year ' + fyLabel(x.fyEnd) + ' is available on the website of the Company at ' + c.web + '.'
       : 'The Company does not have a website. Accordingly, the requirement of placing the Annual Return on the website under Section 134(3)(a) of the Companies Act, 2013 is not applicable.');
-    sec('Statutory auditors and auditors’ report', (a.firm ? x.firmDesc + ', are the Statutory Auditors of the Company' + (f.audTerm ? ', ' + f.audTerm : '') + '. ' : '') + (f.audQual || 'The Auditors’ Report on the financial statements for the year under review does not contain any qualification, reservation, adverse remark or disclaimer.'));
+    sec('Statutory auditors and auditors’ report', T(x, 'auditorsIntro', a.firm ? x.firmDesc + ', are the Statutory Auditors of the Company' + (f.audTerm ? ', ' + f.audTerm : '') + '. ' : '') + F(x, 'audQual', 'The Auditors’ Report on the financial statements for the year under review does not contain any qualification, reservation, adverse remark or disclaimer.'));
     sec('Details of fraud reported by the auditors', 'During the year under review, the Statutory Auditors have not reported to the Board any instance of fraud committed against the Company by its officers or employees under Section 143(12) of the Companies Act, 2013.');
     if (full) {
-      sec('Conservation of energy, technology absorption and foreign exchange', '(A) Conservation of energy: ' + (f.energy || 'The operations of the Company are not energy-intensive; however, adequate measures have been taken to conserve energy wherever possible.'),
-        '(B) Technology absorption: ' + (f.tech || 'The Company has not imported any technology during the year under review.'),
-        '(C) Foreign exchange earnings and outgo: Earnings — ' + (f.fxEarn || 'Nil') + '; Outgo — ' + (f.fxOut || 'Nil') + '.');
+      sec('Conservation of energy, technology absorption and foreign exchange', '(A) Conservation of energy: ' + F(x, 'energy', 'The operations of the Company are not energy-intensive; however, adequate measures have been taken to conserve energy wherever possible.'),
+        '(B) Technology absorption: ' + F(x, 'tech', 'The Company has not imported any technology during the year under review.'),
+        '(C) Foreign exchange earnings and outgo: Earnings — ' + F(x, 'fxEarn', 'Nil') + '; Outgo — ' + F(x, 'fxOut', 'Nil') + '.');
       sec('Risk management', 'The Company has identified the elements of risk relevant to its business. In the opinion of the Board, there are no elements of risk which may threaten the existence of the Company.');
-      sec('Corporate social responsibility', f.csr || 'The provisions of Section 135 of the Companies Act, 2013 relating to Corporate Social Responsibility are not applicable to the Company.');
+      sec('Corporate social responsibility', F(x, 'csr', 'The provisions of Section 135 of the Companies Act, 2013 relating to Corporate Social Responsibility are not applicable to the Company.'));
       sec('Internal financial controls', 'The Company has in place adequate internal financial controls with reference to the financial statements, commensurate with the size and nature of its business.');
-      sec('Subsidiaries, joint ventures and associate companies', f.subs || 'The Company does not have any subsidiary, joint venture or associate company.');
+      sec('Subsidiaries, joint ventures and associate companies', F(x, 'subs', 'The Company does not have any subsidiary, joint venture or associate company.'));
       sec('Maintenance of cost records', 'Maintenance of cost records as specified by the Central Government under Section 148(1) of the Companies Act, 2013 is not required for the business carried on by the Company.');
       sec('Proceedings under the Insolvency and Bankruptcy Code, 2016', 'No application has been made and no proceeding is pending against the Company under the Insolvency and Bankruptcy Code, 2016 during the year under review. Disclosure of the difference in valuation on a one-time settlement with banks or financial institutions is not applicable.');
     }
     sec('Significant and material orders', 'No significant or material orders were passed by the regulators or courts or tribunals impacting the going concern status and the Company’s operations in future.');
-    sec('Prevention of sexual harassment at the workplace', 'The Company is committed to providing a safe workplace and complies, to the extent applicable, with the provisions relating to the constitution of an Internal Committee under the Sexual Harassment of Women at Workplace (Prevention, Prohibition and Redressal) Act, 2013. Details for the year under review: (a) number of complaints of sexual harassment received: ' + (f.poshRecd || '0') + '; (b) number of complaints disposed of: ' + (f.poshDisp || '0') + '; (c) number of cases pending for more than ninety days: ' + (f.poshPend || '0') + '.');
+    sec('Prevention of sexual harassment at the workplace', 'The Company is committed to providing a safe workplace and complies, to the extent applicable, with the provisions relating to the constitution of an Internal Committee under the Sexual Harassment of Women at Workplace (Prevention, Prohibition and Redressal) Act, 2013. Details for the year under review: (a) number of complaints of sexual harassment received: ' + F(x, 'poshRecd', '0') + '; (b) number of complaints disposed of: ' + F(x, 'poshDisp', '0') + '; (c) number of cases pending for more than ninety days: ' + F(x, 'poshPend', '0') + '.');
     sec('Compliance with the Maternity Benefit Act, 1961', 'The Company has complied with the provisions of the Maternity Benefit Act, 1961, to the extent applicable.');
-    sec('Employees', 'As on ' + ld(x.fyEnd) + ', the number of employees of the Company was: Female — ' + (f.empF || '0') + '; Male — ' + (f.empM || '0') + '; Transgender — ' + (f.empT || '0') + '.');
+    sec('Employees', 'As on ' + ld(x.fyEnd) + ', the number of employees of the Company was: Female — ' + F(x, 'empF', '0') + '; Male — ' + F(x, 'empM', '0') + '; Transgender — ' + F(x, 'empT', '0') + '.');
     sec('Compliance with Secretarial Standards', 'The Company has complied with the applicable Secretarial Standards on Meetings of the Board of Directors (SS-1) and on General Meetings (SS-2) issued by the Institute of Company Secretaries of India.');
     sec('Directors’ responsibility statement', 'Pursuant to Section 134(3)(c) and Section 134(5) of the Companies Act, 2013, the Board of Directors, to the best of their knowledge and ability, confirm that:',
       ...lettered(['in the preparation of the annual accounts, the applicable accounting standards had been followed along with proper explanation relating to material departures;',
@@ -624,7 +637,7 @@
       const rows = cells(f.rptList, 6);
       out.push({ pb: true }, { p: 'Annexure-I', b: true, al: 'r' }, ...formHead('FORM NO. AOC-2', 'Particulars of contracts / arrangements made with related parties', 'Pursuant to clause (h) of sub-section (3) of Section 134 of the Act and Rule 8(2) of the Companies (Accounts) Rules, 2014'),
         { p: 'Form for disclosure of particulars of contracts / arrangements entered into by the company with related parties referred to in sub-section (1) of Section 188 of the Companies Act, 2013, including certain arm’s length transactions under the third proviso thereto.', al: 'j' },
-        { p: '1. Details of contracts or arrangements or transactions not at arm’s length basis:', b: true }, { p: f.rptNotArm || 'There were no contracts or arrangements or transactions entered into during the year that were not at arm’s length basis.', al: 'j' },
+        { p: '1. Details of contracts or arrangements or transactions not at arm’s length basis:', b: true }, { p: F(x, 'rptNotArm', 'There were no contracts or arrangements or transactions entered into during the year that were not at arm’s length basis.'), al: 'j' },
         { p: '2. Details of material contracts or arrangements or transactions at arm’s length basis:', b: true },
         { tbl: [['Name of the related party and nature of relationship', 'Nature of contracts / arrangements / transactions', 'Duration', 'Salient terms, including value, if any', 'Date(s) of approval by the Board, if any', 'Amount paid as advances, if any'],
           ...(rows.length ? rows : [['NIL', '', '', '', '', '']])], cols: [22, 18, 12, 20, 14, 14], head: true },
@@ -634,7 +647,7 @@
   }
 
   function annualDocs(x) {
-    const { c, a, f } = x, D = [], FYW = x.firstFY ? 'period' : 'financial year';
+    const { c, a, f } = x, D = [], FYW = T(x, 'periodWord', x.firstFY ? 'period' : 'financial year');
     const shareholders = (c.shareholders || []).filter(s => s.name);
     D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To confirm the minutes of the previous meeting of the Board.',
       'To consider and approve the Audited Financial Statements of the Company for the ' + FYW + ' ended ' + ld(x.fyEnd) + ', together with the Auditors’ Report thereon.',
@@ -644,7 +657,7 @@
       'Any other business with the permission of the Chairperson.']));
 
     D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolutions', sub: 'Approval of accounts, Board’s Report & AGM notice — Sec 134', lh: LH_CO, build: () => {
-      const two = x.isOPC ? v(x.d.name) + ' (DIN: ' + v(x.d.din) + '), Director' : v(x.d.name) + ' (DIN: ' + v(x.d.din) + ') and ' + v(x.d2.name) + ' (DIN: ' + v(x.d2.din) + '), Directors';
+ const two = T(x, 'signingDirectorsPair', x.isOPC ? v(x.d.name) + ' (DIN: ' + v(x.d.din) + '), Director' : v(x.d.name) + ' (DIN: ' + v(x.d.din) + ') and ' + v(x.d2.name) + ' (DIN: ' + v(x.d2.din) + '), Directors');
       return [ctcHead(x, 'RESOLUTIONS PASSED AT THE MEETING OF THE BOARD OF DIRECTORS', f.bmDate, f.bmTime, x.venue(f.bmVenue)), { gap: 1 },
         { p: '**1. APPROVAL OF AUDITED FINANCIAL STATEMENTS FOR THE ' + FYW.toUpperCase() + ' ENDED ' + ld(x.fyEnd).toUpperCase() + '**', u: true },
         { p: '“**RESOLVED THAT** pursuant to the provisions of Section 134 and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Accounts) Rules, 2014 ' + STAT + ', the Audited Financial Statements of the Company for the ' + FYW + ' ended ' + ld(x.fyEnd) + ', comprising ' + fsWords(x) + ', as placed before the Board, be and are hereby approved.', al: 'j' },
@@ -788,13 +801,13 @@
   function allotDocs(x) {
     const { c, f } = x, D = [], fv = num(c.faceValue) || 10, prem = num(f.premium), price = fv + prem; x.price = price;
     const offer = num(f.offerShares), held = totalShares(c), rows = allotRows(x), allotted = rows.reduce((s, r) => s + r.shares, 0);
-    const desc = sharesW(offer) + ' equity shares of Rs. ' + inr(fv) + '/- each at a price of Rs. ' + inr(price) + '/- per share' + (prem ? ' (including a premium of Rs. ' + inr(prem) + '/- per share)' : ' (at par)');
-    const ratio = f.ratio || (held && offer ? 'in proportion to their existing shareholding' : BL);
+    const desc0 = sharesW(offer) + ' equity shares of Rs. ' + inr(fv) + '/- each at a price of Rs. ' + inr(price) + '/- per share' + (prem ? ' (including a premium of Rs. ' + inr(prem) + '/- per share)' : ' (at par)');
+    const desc = T(x, 'issueDescription', desc0), ratio = T(x, 'issueBasis', f.ratio || 'in proportion to their existing shareholding');
     D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To consider and approve the offer of ' + desc + ' to the existing equity shareholders on a rights basis under Section 62(1)(a) of the Companies Act, 2013.', 'To approve the draft Letter of Offer and authorise a Director to dispatch it to the shareholders.', 'Any other business with the permission of the Chairperson.']));
     D.push({ id: 'offerctc', title: 'Certified True Copy of Board Resolution — Rights Offer', sub: 'Sec 62(1)(a)', lh: LH_CO, build: () => ctcBoard(x, 'bm', [
       { p: '**OFFER OF EQUITY SHARES ON RIGHTS BASIS TO THE EXISTING SHAREHOLDERS**', u: true },
-      { p: '“**RESOLVED THAT** pursuant to the provisions of Section 62(1)(a) and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Share Capital and Debentures) Rules, 2014 ' + STAT + ' and the Articles of Association of the Company, the consent of the Board be and is hereby accorded to offer ' + desc + ', aggregating to ' + rupees(offer * price) + ', to the persons who, on the date of the offer, are holders of equity shares of the Company, ' + ratio + ', by way of a Letter of Offer.' },
-      { p: '**RESOLVED FURTHER THAT** the offer shall be made by a notice specifying the number of shares offered and shall remain open for a period of ' + (f.offerDays || '15') + ' days from the date of the offer, i.e. from ' + ld(f.offerDate) + ' to ' + ld(f.lastDate) + ', within which the offer, if not accepted, shall be deemed to have been declined' + (num(f.offerDays) && num(f.offerDays) < 15 ? ', the shorter period being with the consent of not less than ninety per cent of the members' : '') + '.' },
+      { p: '“**RESOLVED THAT** pursuant to the provisions of Section 62(1)(a) and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Share Capital and Debentures) Rules, 2014 ' + STAT + ' and the Articles of Association of the Company, the consent of the Board be and is hereby accorded to offer ' + desc + ', aggregating to ' + T(x, 'issueAmount', rupees(offer * price)) + ', to the persons who, on the date of the offer, are holders of equity shares of the Company, ' + ratio + ', by way of a Letter of Offer.' },
+      { p: '**RESOLVED FURTHER THAT** the offer shall be made by a notice specifying the number of shares offered and shall remain open for a period of ' + T(x, 'offerDays', f.offerDays || '15') + ' days from the date of the offer, i.e. from ' + ld(f.offerDate) + ' to ' + ld(f.lastDate) + ', within which the offer, if not accepted, shall be deemed to have been declined' + (num(f.offerDays) && num(f.offerDays) < 15 ? ', the shorter period being with the consent of not less than ninety per cent of the members' : '') + '.' },
       { p: '**RESOLVED FURTHER THAT** the offer shall include a right exercisable by the shareholders to renounce the shares offered to them, or any of them, in favour of any other person, and that the Board may dispose of the shares not taken up in such manner as it thinks most beneficial to the Company and not dis-advantageous to the shareholders.' },
       { p: '**RESOLVED FURTHER THAT** ' + authWho(x) + ' to sign and dispatch the Letter of Offer to the shareholders and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }]) });
     D.push({ id: 'offerletter', title: 'Letter of Offer with Acceptance / Renunciation Form', sub: 'One page set per shareholder from the client master', lh: LH_CO, build: () => {
@@ -821,8 +834,8 @@
     } });
     D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To take note of the acceptances received against the Letter of Offer dated ' + ld(f.offerDate) + '.', 'To allot equity shares to the shareholders / renouncees who have accepted the offer and paid the application money.', 'To authorise the issue of share certificates and the filing of e-Form PAS-3.', 'Any other business with the permission of the Chairperson.'], 'al', 'alnotice', 'Notice of Board Meeting for Allotment'));
     D.push({ id: 'allotctc', title: 'Certified True Copy of Board Resolution — Allotment', sub: 'Sec 62(1)(a) & 39 — attachment to PAS-3', lh: LH_CO, build: () => ctcBoard(x, 'al', [
-      { p: '**ALLOTMENT OF ' + inr(allotted).toUpperCase() + ' EQUITY SHARES ON RIGHTS BASIS**', u: true },
-      { p: '“**RESOLVED THAT** pursuant to the provisions of Sections 39 and 62(1)(a) and other applicable provisions, if any, of the Companies Act, 2013 read with the rules made thereunder ' + STAT + ', and in terms of the Letter of Offer dated ' + ld(f.offerDate) + ', the Board hereby allots ' + sharesW(allotted) + ' fully paid-up equity shares of Rs. ' + inr(fv) + '/- each at a price of Rs. ' + inr(price) + '/- per share to the following persons, the full application money having been received in the bank account of the Company:' },
+      { p: '**ALLOTMENT OF ' + T(x, 'sharesAllotted', inr(allotted)) + ' EQUITY SHARES ON RIGHTS BASIS**', u: true },
+      { p: '“**RESOLVED THAT** pursuant to the provisions of Sections 39 and 62(1)(a) and other applicable provisions, if any, of the Companies Act, 2013 read with the rules made thereunder ' + STAT + ', and in terms of the Letter of Offer dated ' + ld(f.offerDate) + ', the Board hereby allots ' + T(x, 'sharesAllottedWords', sharesW(allotted)) + ' fully paid-up equity shares of Rs. ' + T(x, 'faceValue', inr(fv)) + '/- each at a price of Rs. ' + T(x, 'issuePrice', inr(price)) + '/- per share to the following persons, the full application money having been received in the bank account of the Company:' },
       { tbl: [['S. No.', 'Name of the allottee', 'Folio No.', 'No. of equity shares', 'Amount received (Rs.)'], ...rows.map((r, i) => [String(i + 1), r.name, r.folio || '—', inr(r.shares), inr(r.amount)]), ['', '**Total**', '', '**' + inr(allotted) + '**', '**' + inr(rows.reduce((s, r) => s + r.amount, 0)) + '**']], cols: [8, 40, 12, 18, 22], head: true },
       { p: '**RESOLVED FURTHER THAT** the said equity shares shall rank pari passu in all respects with the existing equity shares of the Company; that the names of the allottees be entered in the Register of Members; and that share certificates' + (dematNote(x) ? ' / credit to the demat accounts' : '') + ' be issued within two months from the date of allotment in terms of Section 56(4)(a) of the Act, signed by two Directors of the Company.' },
       { p: '**RESOLVED FURTHER THAT** any Director of the Company be and is hereby severally authorised to file the return of allotment in e-Form PAS-3 with the Registrar of Companies within thirty days of allotment under Section 39(4) of the Act and to do all such acts, deeds and things as may be necessary.”' }]) });
@@ -853,7 +866,7 @@
   function signRow(x, ds) { // two signatures one after another for certificates
     const out = [];
     ds.forEach((d, i) => { if (i) out.push({ gap: 1 }); out.push({ sign: d.sign || null }, { p: (d.name || BL) + ' — Director', b: true, after: 0, keep: true }, { p: 'DIN: ' + v(d.din), after: 0, keep: true }); });
-    return out;
+    return tag(out, 'signatures');
   }
 
   /* =====================================================================
@@ -861,19 +874,21 @@
      ===================================================================== */
   function authCapDocs(x) {
     const { c, f } = x, fv = num(c.faceValue) || 10, oldC = num(f.oldCap || c.authCap), newC = num(f.newCap), special = f.resType === 'special';
-    const clause = 'V. The Authorised Share Capital of the Company is ' + rupees(newC) + ' divided into ' + sharesW(newC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- (Rupees ' + words(fv) + ' Only) each.';
-    const res = [{ p: '“**RESOLVED THAT** pursuant to the provisions of Sections 13, 61(1)(a) and 64 and other applicable provisions, if any, of the Companies Act, 2013 read with the rules made thereunder ' + STAT + ', the Authorised Share Capital of the Company be and is hereby increased from ' + rupees(oldC) + ' divided into ' + sharesW(oldC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- each to ' + rupees(newC) + ' divided into ' + sharesW(newC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- each, by the creation of ' + sharesW((newC - oldC) / fv) + ' new Equity Shares of Rs. ' + inr(fv) + '/- each ranking pari passu with the existing Equity Shares of the Company.' },
+    const clause = T(x, 'capitalClause', 'V. The Authorised Share Capital of the Company is ' + rupees(newC) + ' divided into ' + sharesW(newC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- (Rupees ' + words(fv) + ' Only) each.');
+    const OLD = T(x, 'oldCapital', rupees(oldC) + ' divided into ' + sharesW(oldC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- each'), NEW = T(x, 'newCapital', rupees(newC) + ' divided into ' + sharesW(newC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- each');
+    const OLDR = T(x, 'oldCapitalAmount', rupees(oldC)), NEWR = T(x, 'newCapitalAmount', rupees(newC)), CREATED = T(x, 'newSharesCreated', sharesW((newC - oldC) / fv) + ' new Equity Shares of Rs. ' + inr(fv) + '/- each');
+    const res = [{ p: '“**RESOLVED THAT** pursuant to the provisions of Sections 13, 61(1)(a) and 64 and other applicable provisions, if any, of the Companies Act, 2013 read with the rules made thereunder ' + STAT + ', the Authorised Share Capital of the Company be and is hereby increased from ' + OLD + ' to ' + NEW + ', by the creation of ' + CREATED + ' ranking pari passu with the existing Equity Shares of the Company.' },
       { p: '**RESOLVED FURTHER THAT** the existing Clause V of the Memorandum of Association of the Company be and is hereby substituted by the following clause:' }, { p: clause, ind: 567, b: true },
       { p: '**RESOLVED FURTHER THAT** the Board of Directors of the Company be and is hereby authorised to file e-Form SH-7' + (special ? ' and e-Form MGT-14' : '') + ' with the Registrar of Companies and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }];
     const D = [];
-    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To consider and recommend to the members the increase in the Authorised Share Capital of the Company from ' + rupees(oldC) + ' to ' + rupees(newC) + ' and the consequent alteration of Clause V of the Memorandum of Association.', 'To approve the Notice of the Extraordinary General Meeting and fix the date, time and venue thereof.', 'Any other business with the permission of the Chairperson.']));
+    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To consider and recommend to the members the increase in the Authorised Share Capital of the Company from ' + OLDR + ' to ' + NEWR + ' and the consequent alteration of Clause V of the Memorandum of Association.', 'To approve the Notice of the Extraordinary General Meeting and fix the date, time and venue thereof.', 'Any other business with the permission of the Chairperson.']));
     D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolution', sub: 'Recommending increase & convening EGM', lh: LH_CO, build: () => ctcBoard(x, 'bm', [
       { p: '**1. RECOMMENDATION FOR INCREASE IN AUTHORISED SHARE CAPITAL**', u: true },
-      { p: '“**RESOLVED THAT** the Board hereby recommends to the members of the Company the increase in the Authorised Share Capital of the Company from ' + rupees(oldC) + ' to ' + rupees(newC) + ' and the consequent alteration of Clause V of the Memorandum of Association, by way of an ' + (special ? 'special' : 'ordinary') + ' resolution under Sections 13 and 61 of the Companies Act, 2013.”' },
+      { p: '“**RESOLVED THAT** the Board hereby recommends to the members of the Company the increase in the Authorised Share Capital of the Company from ' + OLDR + ' to ' + NEWR + ' and the consequent alteration of Clause V of the Memorandum of Association, by way of an ' + (special ? 'special' : 'ordinary') + ' resolution under Sections 13 and 61 of the Companies Act, 2013.”' },
       { p: '**2. CONVENING OF EXTRAORDINARY GENERAL MEETING**', u: true },
       { p: '“**RESOLVED THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ', and the draft Notice along with the Explanatory Statement under Section 102 of the Act, as placed before the Board, be and is hereby approved; and that ' + authWho(x) + ' to sign and issue the Notice.”' }]) });
     D.push(...egmDocs(x, 'Increase in the Authorised Share Capital and alteration of the Capital Clause of the Memorandum of Association', res,
-      ['The present Authorised Share Capital of the Company is ' + rupees(oldC) + ' divided into ' + sharesW(oldC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- each. To meet the future requirements of funds and to enable the Company to issue further shares, the Board of Directors at its meeting held on ' + ld(f.bmDate) + ' recommended increasing the Authorised Share Capital to ' + rupees(newC) + '.',
+      ['The present Authorised Share Capital of the Company is ' + OLD + '. To meet the future requirements of funds and to enable the Company to issue further shares, the Board of Directors at its meeting held on ' + ld(f.bmDate) + ' recommended increasing the Authorised Share Capital to ' + NEWR + '.',
         'The increase requires the alteration of Clause V of the Memorandum of Association and the approval of the members under Sections 13 and 61 of the Companies Act, 2013. A copy of the Memorandum of Association, along with the proposed alteration, is available for inspection at the Registered Office.'], special ? 'special' : 'ordinary'));
     D.push({ id: 'moa', title: 'Altered Clause V of Memorandum (Capital Clause)', sub: 'Attachment to SH-7 — replace in the MoA print', lh: LH_PLAIN, build: () => [
       { p: 'MEMORANDUM OF ASSOCIATION OF ' + c.name.toUpperCase(), b: true, al: 'c' }, { p: '(Clause V as altered by the members at the Extraordinary General Meeting held on ' + ld(f.egmDate) + ')', al: 'c' }, { gap: 1 },
@@ -893,8 +908,10 @@
      TRANSFER OF SHARES — SH-4 (transfer)
      ===================================================================== */
   function transferDocs(x) {
-    const { c, f } = x, fv = num(c.faceValue) || 10, h = (c.shareholders || [])[parseInt(f.fromIndex, 10)] || {}, n = num(f.trShares), cons = num(f.consideration);
+    const { c, f } = x, fv = num(c.faceValue) || 10, n = num(f.trShares), cons = num(f.consideration);
+    const h = x.T ? { name: '{{transferor}}', folio: '{{transferorFolio}}', shares: '' } : (c.shareholders || [])[parseInt(f.fromIndex, 10)] || {};
     const stamp = Math.ceil(cons * 0.00015);
+    const NS = T(x, 'sharesTransferred', sharesW(n)), FV = T(x, 'faceValue', inr(fv)), NN = T(x, 'sharesTransferredCount', inr(n));
     const D = [];
     D.push({ id: 'sh4', title: 'Form SH-4 — Securities Transfer Form', sub: 'Sec 56 & Rule 11 — signed by transferor, transferee & witness', lh: LH_PLAIN, build: () => [
       ...formHead('Form No. SH-4', 'Securities Transfer Form', 'Pursuant to Section 56 of the Companies Act, 2013 and sub-rule (1) of Rule 11 of the Companies (Share Capital and Debentures) Rules, 2014'),
@@ -909,15 +926,15 @@
       head('TRANSFEREE’S PARTICULARS'), { tbl: [['Name in full', v(f.toName)], ['Father’s / mother’s / spouse’s name', v(f.toFather)], ['Address and e-mail ID', (oneLine(f.toAddr) || BL) + (f.toEmail ? ' — ' + f.toEmail : '')], ['Occupation', v(f.toOcc)], ['PAN', v(f.toPan)], ['Existing folio no., if any', v(f.toFolio)], ['Signature', '']] },
       { tbl: [['Value of stamp affixed (Rs.)', stamp ? inr(stamp) + ' (0.015% of consideration — Indian Stamp Act, 1899; verify the current rate)' : BL], ['Enclosures', '(1) Share certificate no. ' + v(f.certNo) + '  (2) Copy of PAN of the transferee  (3) Others: ____']] },
       head('FOR OFFICE USE ONLY'), { tbl: [['Checked by', ''], ['Signature tallied by', ''], ['Entered in the Register of Transfer on ____ vide Transfer No. ____', ''], ['Approval date', sd(f.bmDate)]] }] });
-    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To consider and approve the transfer of ' + inr(n) + ' equity shares from ' + v(h.name) + ' to ' + v(f.toName) + '.', 'Any other business with the permission of the Chairperson.']));
+    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To consider and approve the transfer of ' + NN + ' equity shares from ' + v(h.name) + ' to ' + v(f.toName) + '.', 'Any other business with the permission of the Chairperson.']));
     D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolution — Transfer', sub: 'Approval & registration of transfer — Sec 56', lh: LH_CO, build: () => ctcBoard(x, 'bm', [
       { p: '**APPROVAL OF TRANSFER OF EQUITY SHARES**', u: true },
-      { p: '“**RESOLVED THAT** pursuant to the provisions of Section 56 and other applicable provisions, if any, of the Companies Act, 2013 read with Rule 11 of the Companies (Share Capital and Debentures) Rules, 2014 and the Articles of Association of the Company, the transfer of ' + sharesW(n) + ' equity shares of Rs. ' + inr(fv) + '/- each, bearing distinctive numbers ' + v(f.distFrom) + ' to ' + v(f.distTo) + ' comprised in share certificate no. ' + v(f.certNo) + ', from ' + v(h.name) + ' (Folio No. ' + v(h.folio) + ') to ' + v(f.toName) + ', as per the instrument of transfer in Form SH-4 dated ' + ld(f.execDate) + ', duly stamped and executed, be and is hereby approved and registered.' },
+      { p: '“**RESOLVED THAT** pursuant to the provisions of Section 56 and other applicable provisions, if any, of the Companies Act, 2013 read with Rule 11 of the Companies (Share Capital and Debentures) Rules, 2014 and the Articles of Association of the Company, the transfer of ' + NS + ' equity shares of Rs. ' + FV + '/- each, bearing distinctive numbers ' + v(f.distFrom) + ' to ' + v(f.distTo) + ' comprised in share certificate no. ' + v(f.certNo) + ', from ' + v(h.name) + ' (Folio No. ' + v(h.folio) + ') to ' + v(f.toName) + ', as per the instrument of transfer in Form SH-4 dated ' + ld(f.execDate) + ', duly stamped and executed, be and is hereby approved and registered.' },
       { p: '**RESOLVED FURTHER THAT** the name of ' + v(f.toName) + ' be entered in the Register of Members in respect of the said shares, and that the share certificate be endorsed in favour of the transferee (or a new certificate be issued) and delivered within one month from the date of receipt of the instrument of transfer, in terms of Section 56(4)(c) of the Act; and that any Director of the Company be and is hereby authorised to sign the endorsement and to do all acts necessary in this regard.”' }], true) });
     D.push({ id: 'trletter', title: 'Intimation of Registration of Transfer', sub: 'To the transferee, with the endorsed certificate', lh: LH_CO, build: () => [
       { p: 'Date: ' + ld(f.bmDate), al: 'r' }, { p: 'To,', after: 0 }, { p: v(f.toName), b: true, after: 0 }, ...addrLines(f.toAddr), { gap: 1 },
-      subj('Registration of transfer of ' + inr(n) + ' equity shares of ' + c.name), { p: 'Dear Sir / Madam,' },
-      { p: 'We are pleased to inform you that the Board of Directors at its meeting held on ' + ld(f.bmDate) + ' has approved the transfer of ' + sharesW(n) + ' equity shares of Rs. ' + inr(fv) + '/- each (distinctive numbers ' + v(f.distFrom) + ' to ' + v(f.distTo) + ') from ' + v(h.name) + ' in your favour, and your name has been entered in the Register of Members' + (f.toFolio ? ' under Folio No. ' + f.toFolio : '') + '.', al: 'j' },
+      subj('Registration of transfer of ' + NN + ' equity shares of ' + c.name), { p: 'Dear Sir / Madam,' },
+      { p: 'We are pleased to inform you that the Board of Directors at its meeting held on ' + ld(f.bmDate) + ' has approved the transfer of ' + NS + ' equity shares of Rs. ' + FV + '/- each (distinctive numbers ' + v(f.distFrom) + ' to ' + v(f.distTo) + ') from ' + v(h.name) + ' in your favour, and your name has been entered in the Register of Members' + (f.toFolio ? ' under Folio No. ' + f.toFolio : '') + '.', al: 'j' },
       { p: 'The share certificate no. ' + v(f.certNo) + ', duly endorsed in your favour, is enclosed. Kindly acknowledge receipt.', al: 'j' },
       ...signoff(), ...sigCompany(x, f.bmDate), { gap: 1 }, { p: 'Encl.: Share certificate no. ' + v(f.certNo) }] });
     D.push({ id: 'trsheet', title: 'Share Transfer Checklist', sub: 'Internal', lh: LH_NONE, build: () => [
@@ -948,8 +965,8 @@
       { p: '**RESOLVED FURTHER THAT** the Board of Directors be and is hereby authorised to file e-Forms MGT-14 and INC-22 with the Registrar of Companies and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }],
       ['For operational convenience and better administrative control, the Board of Directors at its meeting held on ' + ld(f.bmDate) + ' recommended shifting the Registered Office of the Company from ' + oneLine(c.addr) + ' to ' + newA + '.', 'As the new premises are outside the local limits of the city / town / village where the Registered Office is presently situated, the approval of the members by way of a special resolution is required under Section 12(5) of the Companies Act, 2013.'], 'special'));
     D.push({ id: 'noc', title: 'No-Objection Certificate from Owner of Premises', sub: 'Attachment to INC-22 — signed by the owner', lh: LH_PLAIN, build: () => [
-      { p: 'NO OBJECTION CERTIFICATE', b: true, al: 'c', u: true }, { gap: 1 }, { p: 'Date: ' + ld(f.nocDate || f.bmDate), al: 'r' }, ...toBoard(x),
-      { p: 'I / We, ' + v(f.ownerName) + ', ' + (f.ownerRel ? f.ownerRel + ', ' : '') + 'being the owner(s) of the premises situated at ' + newA + ', hereby give my / our no objection to ' + c.name + ' (CIN: ' + v(c.cin) + ') for using the said premises as its Registered Office' + (f.premises === 'rented' ? ' under the rent / lease agreement dated ' + ld(f.leaseDate) : '') + ', and for the purpose of correspondence with all authorities.', al: 'j' },
+      { p: 'NO OBJECTION CERTIFICATE', b: true, al: 'c', u: true }, { gap: 1 }, { p: 'Date: ' + T(x, 'nocDate', ld(f.nocDate || f.bmDate)), al: 'r' }, ...toBoard(x),
+      { p: 'I / We, ' + v(f.ownerName) + ', ' + T(x, 'ownerRelationText', f.ownerRel ? f.ownerRel + ', ' : '') + 'being the owner(s) of the premises situated at ' + newA + ', hereby give my / our no objection to ' + c.name + ' (CIN: ' + v(c.cin) + ') for using the said premises as its Registered Office' + T(x, 'leaseText', (f.premises || 'rented') === 'rented' ? ' under the rent / lease agreement dated ' + ld(f.leaseDate) : '') + ', and for the purpose of correspondence with all authorities.', al: 'j' },
       { p: 'I / We have no objection to the Company filing this certificate with the Registrar of Companies and other authorities.', al: 'j' },
       ...sigPerson({ name: f.ownerName }, f.nocDate || f.bmDate, f.place, ['Address: ' + (oneLine(f.ownerAddr) || BL)])] });
     D.push({ id: 'inc22', title: 'e-Form INC-22 Data Sheet & Checklist', sub: 'Internal — notice of situation / change of registered office', lh: LH_NONE, build: () => [
@@ -977,7 +994,7 @@
     D.push({ id: 'decl', title: 'Declaration by Director — Commencement of Business', sub: 'Content of e-Form INC-20A — signed by the director', lh: LH_CO, build: () => [
       { p: 'DECLARATION FOR COMMENCEMENT OF BUSINESS', b: true, al: 'c', u: true }, { p: '[Pursuant to Section 10A(1)(a) of the Companies Act, 2013 and Rule 23A of the Companies (Incorporation) Rules, 2014]', al: 'c', sz: 20 }, { gap: 1 },
       { p: 'I, ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + ') of ' + c.name + ' (CIN: ' + v(c.cin) + '), incorporated on ' + ld(c.incDate) + ', do hereby declare that every subscriber to the Memorandum of Association of the Company has paid the value of the shares agreed to be taken by him / her, as under:', al: 'j' }, tbl,
-      { p: 'The subscription money has been received in the bank account of the Company' + (f.bank ? ' maintained with ' + f.bank : '') + '. The proof of payment is attached.', al: 'j' },
+      { p: 'The subscription money has been received in the bank account of the Company' + T(x, 'bankText', f.bank ? ' maintained with ' + f.bank : '') + '. The proof of payment is attached.', al: 'j' },
       ...sigCompany(x, f.declDate || f.bmDate)] });
     D.push({ id: 'inc20a', title: 'e-Form INC-20A Data Sheet & Checklist', sub: 'Internal', lh: LH_NONE, build: () => [
       ...sheetHead('e-FORM INC-20A — COMMENCEMENT OF BUSINESS — DATA SHEET & CHECKLIST', x), head('A. Company'), coTable(x),
@@ -1033,7 +1050,7 @@
     const h1 = f.half !== 'h2', from = h1 ? (y - 1) + '-04-01' : (y - 1) + '-10-01', to = h1 ? (y - 1) + '-09-30' : y + '-03-31', due = h1 ? (y - 1) + '-10-31' : y + '-04-30';
     const tbl = { tbl: [['S. No.', 'Name of the supplier', 'PAN', 'Udyam Reg. No.', 'Amount due (Rs.)', 'Due since', 'Reason for delay'], ...(rows.length ? rows.map((r, i) => [String(i + 1), r[0], r[1] || '—', r[2] || '—', r[3] ? inr(num(r[3])) : '—', r[4] || '—', r[5] || '—']) : [['1', 'NIL', '', '', '', '', '']]), ['', '**Total**', '', '', '**' + inr(rows.reduce((s, r) => s + num(r[3]), 0)) + '**', '', '']], cols: [6, 22, 12, 16, 13, 12, 19], head: true };
     return [{ id: 'msmestmt', title: 'Statement of Outstanding Dues to MSE Suppliers', sub: 'Half year ' + sd(from) + ' to ' + sd(to), lh: LH_CO, build: () => [
-      { p: 'STATEMENT OF OUTSTANDING PAYMENTS TO MICRO AND SMALL ENTERPRISE SUPPLIERS', b: true, al: 'c' }, { p: 'For the half year from ' + ld(from) + ' to ' + ld(to), al: 'c' },
+      { p: 'STATEMENT OF OUTSTANDING PAYMENTS TO MICRO AND SMALL ENTERPRISE SUPPLIERS', b: true, al: 'c' }, { p: T(x, 'halfYearPeriod', 'For the half year from ' + ld(from) + ' to ' + ld(to)), al: 'c' },
       { p: 'Pursuant to Section 405 of the Companies Act, 2013 read with the Specified Companies (Furnishing of information about payment to micro and small enterprise suppliers) Order, 2019, the details of amounts due to micro and small enterprise suppliers which remained unpaid for more than forty-five days from the date of acceptance or deemed acceptance of the goods or services (Section 9 of the MSMED Act, 2006) are as follows:', al: 'j' }, tbl,
       ...sigCompany(x, f.declDate || to)] },
     { id: 'msme1', title: 'e-Form MSME-1 Data Sheet & Checklist', sub: 'Internal — half-yearly return', lh: LH_NONE, build: () => [
@@ -1049,7 +1066,7 @@
      ===================================================================== */
   function stk2Docs(x) {
     const { c, f } = x, D = [], dirs = (c.directors || []).filter(d => d.name);
-    const ground = f.ground === 'nocomm' ? 'has not commenced its business since its incorporation' : 'has not been carrying on any business or operation for a period of two immediately preceding financial years and has not made any application within such period for obtaining the status of a dormant company under Section 455';
+    const ground = T(x, 'strikeOffGround', f.ground === 'nocomm' ? 'has not commenced its business since its incorporation' : 'has not been carrying on any business or operation for a period of two immediately preceding financial years and has not made any application within such period for obtaining the status of a dormant company under Section 455');
     const special = [{ p: '“**RESOLVED THAT** pursuant to the provisions of Section 248(2) and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Removal of Names of Companies from the Register of Companies) Rules, 2016 ' + STAT + ', and since the Company ' + ground + ', and has extinguished all its liabilities, the consent of the members be and is hereby accorded to make an application to the Registrar of Companies for removing the name of the Company from the Register of Companies.' },
       { p: '**RESOLVED FURTHER THAT** the Board of Directors of the Company be and is hereby authorised to file e-Form STK-2 along with the indemnity bonds (STK-3), affidavits (STK-4), statement of accounts and other documents, and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }];
     D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To consider the proposal for removal of the name of the Company from the Register of Companies under Section 248(2) of the Companies Act, 2013.', 'To approve the statement of accounts as on ' + ld(f.accDate) + '.', 'To approve the Notice of the Extraordinary General Meeting.', 'Any other business with the permission of the Chairperson.']));
@@ -1123,7 +1140,7 @@
       { p: 'STATEMENT OF SOLVENCY', b: true, al: 'c', u: true }, { p: '[Pursuant to Section 34 of the Limited Liability Partnership Act, 2008 and Rule 24 of the LLP Rules, 2009]', al: 'c', sz: 20 }, { gap: 1 },
       { p: 'The designated partners of ' + c.name + ' (LLPIN: ' + v(c.cin) + ') hereby state that, for the financial year ended ' + ld(f.fyEnd) + ':', al: 'j' },
       ...lettered([f.solvent === 'no' ? 'the Limited Liability Partnership is NOT able to meet its liabilities (both contingent and otherwise) in full as they become due in the normal course of business;' : 'the Limited Liability Partnership is able to meet its liabilities (both contingent and otherwise) in full as they become due in the normal course of business;',
-        'the Statement of Account and Solvency has been prepared in accordance with the books of account maintained under Section 34 of the Act and gives a true and fair view of the state of affairs of the Limited Liability Partnership;', 'the turnover of the Limited Liability Partnership for the year was Rs. ' + (f.turnover ? inr(num(f.turnover)) : BL) + ' and the total contribution of the partners was Rs. ' + inr(totC) + '.']),
+        'the Statement of Account and Solvency has been prepared in accordance with the books of account maintained under Section 34 of the Act and gives a true and fair view of the state of affairs of the Limited Liability Partnership;', 'the turnover of the Limited Liability Partnership for the year was Rs. ' + T(x, 'turnover', f.turnover ? inr(num(f.turnover)) : BL) + ' and the total contribution of the partners was Rs. ' + T(x, 'totalContribution', inr(totC)) + '.']),
       { gap: 1 }, { p: 'For ' + c.name, b: true }, ...signRow(x, [x.d, x.d2.name ? x.d2 : {}]), { p: 'Designated Partners', after: 0 }, { p: 'Place: ' + v(f.place), after: 0 }, { p: 'Date: ' + ld(f.approveDate) }] });
     D.push({ id: 'llpsheet', title: 'Form 11 & Form 8 Data Sheet & Checklist', sub: 'Internal — LLP annual filing', lh: LH_NONE, build: () => [
       ...sheetHead('LLP FORM 11 & FORM 8 — DATA SHEET & CHECKLIST — FY ' + fyLabel(f.fyEnd), x), head('A. LLP'), coTable(x),
@@ -1202,11 +1219,16 @@
   /* =====================================================================
      DISPATCH
      ===================================================================== */
-  function docDefs(ctx) {
+  // templates: { docId: text } for this case & variant (optional)
+  function docDefs(ctx, templates) {
     const x = prep(ctx), K = x.kase;
     const MAP = { dirapp: dirAppDocs, dirres: dirResDocs, annual: annualDocs, allot: allotDocs, authcap: authCapDocs, transfer: transferDocs, regoffice: regOfficeDocs, inc20a: inc20aDocs, dpt3: dpt3Docs, msme1: msmeDocs, stk2: stk2Docs, llp: llpDocs, registers: registerDocs };
     const D = MAP[K] ? MAP[K](x) : ['first', 'agm', 'casual'].includes(K) ? auditorDocs(x) : [];
-    return D.map((d, i) => Object.assign({}, d, { no: i + 1 }));
+    return D.map((d, i) => {
+      const def = Object.assign({}, d, { no: i + 1, fixed: isFixed(d.id) });
+      if (templates && templates[d.id] && !def.fixed && !x.T) { const orig = d.build; def.custom = true; def.build = () => renderTemplate(x, orig(), templates[d.id]); }
+      return def;
+    });
   }
 
   function missing(ctx) {
@@ -1344,11 +1366,124 @@
     return W;
   }
 
+
+  /* =====================================================================
+     EDITABLE TEMPLATES
+     A template is plain text. Each line is one paragraph.
+       [c] centre  [r] right  [l] left  (default: justified)   [b] bold  [u] underline
+       [h] hanging list (1. / (a) …)   [i] indent   [t] no space after   [big] / [small]
+       **bold words**   <br> = line break   blank line = empty line   --- = new page
+       {{placeholder}} = value from the client / case (e.g. {{companyName}}, {{bmDate}}, {{bmDate:day}})
+       [[signature]] [[table]] [[address]] … = blocks taken as they are from the standard document
+     ===================================================================== */
+  const VARIANTS = {
+    agm: [['apptType', 'Type', [['new', 'New auditor'], ['re', 'Re-appointment']]]],
+    casual: [['reason', 'Reason', [['resign', 'Resignation'], ['other', 'Other']]]],
+    dirapp: [['apptMode', 'Mode', [['additional', 'Additional Director (Board)'], ['egm', 'At EGM']]], ['regularise', 'Regularise at EGM', [['no', 'No'], ['yes', 'Yes']]]],
+    annual: [['coSize', 'Company', [['small', 'Small company / OPC'], ['other', 'Other company']]], ['rpt', 'Related party contracts', [['no', 'No'], ['yes', 'Yes']]]],
+    regoffice: [['scope', 'Change', [['local', 'Within city'], ['roc', 'Outside city, same ROC']]]],
+    authcap: [['resType', 'Resolution', [['ordinary', 'Ordinary'], ['special', 'Special']]]],
+    dpt3: [['audCert', 'Auditor certificate', [['no', 'No'], ['yes', 'Yes']]]],
+    stk2: [['ground', 'Ground', [['nobiz', 'No business for 2 years'], ['nocomm', 'Not commenced business']]]],
+    llp: [['solvent', 'Solvency', [['yes', 'Able to pay debts'], ['no', 'Not able to pay debts']]]],
+  };
+  const variantKey = (kase, f) => (VARIANTS[kase] || []).map(([k, , opts]) => k + '=' + ((f && f[k]) || opts[0][0])).join('&');
+  // documents that repeat per person / are internal working papers keep their fixed format
+  const FIXED = new Set(['offerletter', 'sh1', 'shortnotice', 'stk3', 'stk4', 'adt1', 'dir12', 'annualsheet', 'pas3', 'sh7', 'trsheet', 'inc22', 'inc20a', 'dpt3', 'msme1', 'stk2', 'llpsheet', 'mgt1', 'regdir', 'shlist']);
+  const isFixed = id => FIXED.has(id) || /^decl\d+$/.test(id);
+  const SELECT_KEYS = new Set(['apptType', 'reason', 'apptMode', 'regularise', 'appCat', 'retire', 'appTitle', 'coSize', 'rpt', 'shortNotice', 'amtUnit', 'lh', 'addToMaster', 'updateMaster', 'issueType', 'resType', 'scope', 'premises', 'audCert', 'half', 'ground', 'solvent', 'fromIndex', 'resIndex', 'dir2Index', 'offerDays', 'term', 'autoJson']);
+  const PROSE_KEYS = new Set(['remun', 'appRemun', 'appProf', 'appRel', 'appShares', 'appExp', 'appQual', 'ratio', 'bank', 'dividend', 'reserves', 'material', 'natureChange', 'deposits', 'loans186', 'affairs', 'dirChanges', 'audQual', 'audTerm', 'csr', 'subs', 'energy', 'tech', 'fxEarn', 'fxOut', 'resReason', 'rptNotArm', 'partnerChanges', 'ownerRel', 'udin', 'prevEmail', 'prevAddr', 'reasonText', 'resEffDate', 'leaseDate', 'appOther', 'appInterest', 'allottees', 'subscribers', 'dptRows', 'msmeRows', 'stkItems', 'partners', 'rptList', 'bmList', 'premium', 'certFrom', 'toFolio']);
+  function tokenCtx(kase, variant) {
+    const c = { name: '{{companyName}}', cin: '{{cin}}', addr: '{{regdOffice}}', email: '{{companyEmail}}', web: '', type: 'private', size: 'small', incDate: '{{incDate}}', authCap: '{{authCap}}', paidCap: '{{paidCap}}', faceValue: '10',
+      directors: [{ name: '{{director1}}', din: '{{director1Din}}', desig: 'Director' }, { name: '{{director2}}', din: '{{director2Din}}', desig: 'Director' }], shareholders: [] };
+    const a = { firm: '{{caFirm}}', frn: '{{frn}}', partner: '{{caPartner}}', mno: '{{caMno}}', desig: 'Partner', addr: '{{caAddress}}', email: '{{caEmail}}', pan: '{{caPan}}', const: '{{caConstitution}}' };
+    const base = Object.assign({}, variant || {});
+    const f = typeof Proxy === 'function' ? new Proxy(base, { get: (t, k) => typeof k !== 'string' ? undefined : (k in t) ? t[k] : (SELECT_KEYS.has(k) || PROSE_KEYS.has(k)) ? '' : '{{' + k + '}}', has: () => true }) : base;
+    return { kase, c, a, d: c.directors[0], ds: [c.directors[0]], f, T: true };
+  }
+  const attrsOf = b => { const a = []; if (b.al === 'c') a.push('c'); else if (b.al === 'r') a.push('r'); else if (b.al !== 'j') a.push('l'); if (b.b) a.push('b'); if (b.u) a.push('u'); if (b.hang) a.push('h'); if (b.ind && !b.hang) a.push('i'); if (b.after === 0) a.push('t'); if (b.sz && b.sz >= 26) a.push('big'); if (b.sz && b.sz <= 21) a.push('small'); return a; };
+  function serialize(blocks) {
+    const out = [], count = {}; let lastGid = null;
+    blocks.forEach(b => {
+      const g = b.grp || (b.tbl ? 'table' : null);
+      if (g) { const gid = b.gid || ('t' + out.length + Math.random()); if (gid !== lastGid || b.tbl) { count[g] = (count[g] || 0) + 1; out.push('[[' + g + (count[g] > 1 ? '#' + count[g] : '') + ']]'); } lastGid = gid; return; }
+      lastGid = null;
+      if (b.gap) { for (let i = 0; i < b.gap; i++) out.push(''); return; }
+      if (b.pb) { out.push('---'); return; }
+      if (b.p === undefined) return;
+      const a = attrsOf(b); out.push((a.length ? '[' + a.join(' ') + '] ' : '') + String(b.p).replace(/\t/g, ' ').replace(/\n/g, '<br>'));
+    });
+    return out.join('\n');
+  }
+  function groupsOf(blocks) {
+    const map = {}, count = {}; let lastGid = null, cur = null;
+    blocks.forEach(b => {
+      const g = b.grp || (b.tbl ? 'table' : null);
+      if (!g) { lastGid = null; return; }
+      const gid = b.gid || Math.random();
+      if (gid !== lastGid || b.tbl) { count[g] = (count[g] || 0) + 1; cur = map[g + (count[g] > 1 ? '#' + count[g] : '')] = []; }
+      lastGid = gid; cur.push(b);
+    });
+    return map;
+  }
+  function tokenValue(x, key) {
+    const [k0, sfx] = key.split(':'), k = k0.trim(), low = k.toLowerCase(), up = /[a-z]/i.test(k) && k === k.toUpperCase() && k !== k.toLowerCase();
+    const c = x.c, a = x.a, d = x.d || {}, d2 = x.d2 || {}, r = x.res || {};
+    const base = { companyname: c.name, cin: c.cin, regdoffice: oneLine(c.addr), companyemail: c.email, incdate: c.incDate, authcap: c.authCap, paidcap: c.paidCap,
+      cafirm: a.firm, frn: a.frn, capartner: a.partner, camno: a.mno, caaddress: oneLine(a.addr), caemail: a.email, capan: a.pan, caconstitution: a.const,
+      director1: d.name, director1din: d.din, director2: d2.name, director2din: d2.din, resigningdirector: r.name, resigningdirectordin: r.din, previousauditor: prevDesc(x.f) };
+    const tr = (c.shareholders || [])[parseInt(x.f.fromIndex, 10)]; if (tr) { base.transferor = tr.name; base.transferorfolio = tr.folio; }
+    let val;
+    const vals = Object.keys(x.vals || {}).find(n => n.toLowerCase() === low);
+    if (vals) val = x.vals[vals];
+    else if (low in base) val = base[low];
+    else { const fk = Object.keys(x.f).find(n => n.toLowerCase() === low); val = fk ? x.f[fk] : undefined; if (val === undefined && /venue$/.test(low)) val = oneLine(c.addr); if ((val === '' || val == null) && /venue$/.test(low)) val = oneLine(c.addr); }
+    if (vals && val === '') return '';
+    if (val === undefined || val === null || val === '') val = BL;
+    else if (typeof val !== 'string') val = String(val);
+    const s2 = (sfx || '').toLowerCase();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) val = s2 === 'short' ? sd(val) : s2 === 'day' ? dayName(val) : ld(val);
+    else if (/^\d{1,2}:\d{2}$/.test(val)) val = tm(val);
+    else if (s2 === 'ord') val = ord(val);
+    return up ? val.toUpperCase() : val;
+  }
+  function renderTemplate(x, realBlocks, text) {
+    const groups = groupsOf(realBlocks), out = [];
+    const sub = t => t.replace(/\{\{([^{}]+)\}\}/g, (_, k) => tokenValue(x, k));
+    String(text || '').replace(/\r/g, '').split('\n').forEach(line => {
+      const ln = line.replace(/\s+$/, '');
+      if (!ln.trim()) { out.push({ gap: 1 }); return; }
+      if (/^-{3,}$/.test(ln.trim())) { out.push({ pb: true }); return; }
+      const gm = /^\[\[([a-z0-9#-]+)\]\]$/i.exec(ln.trim());
+      if (gm) { (groups[gm[1].toLowerCase()] || []).forEach(b => out.push(b)); return; }
+      // attributes: [c b u] or [c][b][u] (commas also allowed)
+      const AT = /^\s*\[((?:c|r|l|j|b|u|h|i|t|big|small)(?:[\s,]+(?:c|r|l|j|b|u|h|i|t|big|small))*)\]\s?/i;
+      let at = [], body = ln, m;
+      while ((m = AT.exec(body))) { at = at.concat(m[1].toLowerCase().split(/[\s,]+/)); body = body.slice(m[0].length); }
+      const blk = { p: sub(body).replace(/<br\s*\/?>/gi, '\n'), al: at.includes('c') ? 'c' : at.includes('r') ? 'r' : at.includes('l') ? 'l' : 'j' };
+      if (at.includes('b')) blk.b = true; if (at.includes('u')) blk.u = true; if (at.includes('t')) blk.after = 0;
+      if (at.includes('big')) blk.sz = 28; if (at.includes('small')) blk.sz = 20; if (at.includes('i')) blk.ind = 567;
+      if (at.includes('h')) { blk.hang = true; blk.p = blk.p.replace(/^(\(?[0-9a-zivx]{1,4}[.)])\s+/i, '$1\t'); }
+      out.push(blk);
+    });
+    return out;
+  }
+  // standard template text of one document (what the editor starts from)
+  function templateText(kase, variant, docId) {
+    const d = docDefs(tokenCtx(kase, variant)).find(z => z.id === docId);
+    return d ? serialize(d.build()) : '';
+  }
+  function templateDocs(kase, variant) {
+    return docDefs(tokenCtx(kase, variant)).map(d => ({ id: d.id, no: d.no, title: d.title, sub: d.sub, fixed: isFixed(d.id) }));
+  }
+  function placeholders(text) { const set = new Set(); String(text || '').replace(/\{\{([^{}:]+)(?::[^{}]*)?\}\}/g, (_, k) => set.add(k)); return [...set]; }
+
   function fileName(d, companyName) {
     const safe = s => String(s || '').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
     return String(d.no).padStart(2, '0') + '_' + safe(d.title).slice(0, 60) + '_' + safe(companyName).slice(0, 40) + '.docx';
   }
 
   return { CASES, CASE_TITLE, CASE_SHORT, LH_CO, LH_CA, LH_NONE, LH_PLAIN, BL, docDefs, missing, timeline, warnings, fileName, defaults, agmNumber,
+    VARIANTS, variantKey, templateText, templateDocs, placeholders, isFixed,
     helpers: { ld, sd, tm, ord, addDays, addMonths, oneLine, fyStart, firstFYEnd, pd, parseDMY } };
 });

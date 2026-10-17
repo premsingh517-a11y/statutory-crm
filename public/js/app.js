@@ -88,48 +88,18 @@ async function loadMasters() {
 }
 
 /* ---------------- router ---------------- */
-function parseHash() { const [p, q] = (location.hash.replace(/^#\/?/, '') || 'dashboard').split('?'); return { page: p || 'dashboard', params: new URLSearchParams(q || '') }; }
+function parseHash() { const [p, q] = (location.hash.replace(/^#\/?/, '') || 'clients').split('?'); return { page: p || 'clients', params: new URLSearchParams(q || '') }; }
 window.addEventListener('hashchange', () => { if (S.me) route(); });
 const PAGES = {};
 function route() {
   const { page, params } = parseHash();
-  const fn = PAGES[page] && (!['users', 'activity'].includes(page) || isAdmin()) ? PAGES[page] : PAGES.dashboard;
-  $$('.side a').forEach(a => a.classList.toggle('active', a.dataset.route === page));
+  const fn = PAGES[page] && (!['users', 'activity'].includes(page) || isAdmin()) ? PAGES[page] : PAGES.clients;
+  const nav = page === 'generate' ? 'clients' : page;
+  $$('.side a').forEach(a => a.classList.toggle('active', a.dataset.route === nav));
   $('side').classList.remove('open');
   window.scrollTo(0, 0);
   fn(params);
 }
-
-/* =====================================================================
-   DASHBOARD
-   ===================================================================== */
-const FILING_KEYS = ['adt1', 'dir12', 'aoc4', 'mgt7', 'pas3', 'sh7', 'inc22', 'mgt14', 'inc20a', 'dpt3', 'msme1', 'stk2', 'form11', 'form8'];
-const filedAny = d => Object.keys(d || {}).some(k => /Srn$/.test(k) && d[k]);
-PAGES.dashboard = async () => {
-  const v = $('view');
-  v.innerHTML = '<div class="pagehead"><div><h1>Namaste, ' + esc(S.me.name.split(' ')[0]) + '</h1><p class="sub">Upcoming statutory deadlines across all clients.</p></div><a class="btn" href="#/generate">+ Generate Documents</a></div><div id="dashBody"><div class="card">Loading…</div></div>';
-  try { S.filings = await api('GET', '/api/filings'); } catch (e) { return fail(e); }
-  const today = todayISO(), soon = H.addDays(today, 7), rows = [];
-  let pending = 0;
-  S.filings.forEach(fl => {
-    const ctx = { kase: fl.kase, c: S.clients.find(c => c.id === fl.clientId) || {}, f: fl.data };
-    DC.timeline(ctx).forEach(t => {
-      if (!t.due || t.actual) return;
-      if (FILING_KEYS.includes(t.key)) pending++;
-      rows.push({ fl, t, status: t.due < today ? 'overdue' : t.due <= soon ? 'soon' : 'upcoming' });
-    });
-  });
-  rows.sort((a, b) => a.t.due.localeCompare(b.t.due));
-  const overdue = rows.filter(r => r.status === 'overdue').length;
-  const pill = s => s === 'overdue' ? '<span class="pill red">Overdue</span>' : s === 'soon' ? '<span class="pill gold">Due in 7 days</span>' : '<span class="pill grey">Upcoming</span>';
-  const openBtn = (fl, ghost) => '<a class="btn sm' + (ghost ? ' ghostlink' : '') + '" href="#/generate?client=' + fl.clientId + '&case=' + fl.kase + '">Open</a>';
-  let html = '<div class="stats"><div class="stat"><b>' + S.clients.length + '</b><span>Clients</span></div><div class="stat"><b>' + S.cas.length + '</b><span>CA firms</span></div><div class="stat gold"><b>' + pending + '</b><span>MCA filings pending</span></div><div class="stat red"><b>' + overdue + '</b><span>Overdue items</span></div></div>';
-  html += '<div class="card"><h2>Deadlines</h2>' + (rows.length ? '<table class="tbl"><tr><th>Client</th><th>Case</th><th>Task</th><th>Due by</th><th>Status</th><th></th></tr>' + rows.slice(0, 80).map(r =>
-    '<tr><td><b>' + esc(r.fl.clientName) + '</b></td><td class="hide-m">' + esc(DC.CASE_SHORT[r.fl.kase] || r.fl.kase) + '</td><td>' + esc(r.t.label) + (r.t.rule ? '<br><small class="hint">' + esc(r.t.rule) + '</small>' : '') + '</td><td><b>' + H.sd(r.t.due) + '</b></td><td>' + pill(r.status) + '</td><td class="actions">' + openBtn(r.fl) + '</td></tr>').join('') + '</table>'
-    : '<div class="empty">No pending deadlines. Start by generating documents for a client — dates you enter will be tracked here.</div>') + '</div>';
-  html += '<div class="card"><h2>Recently worked on</h2>' + (S.filings.length ? '<table class="tbl"><tr><th>Client</th><th>Case</th><th>Last updated</th><th></th></tr>' + S.filings.slice(0, 10).map(fl => '<tr><td>' + esc(fl.clientName) + '</td><td>' + esc(DC.CASE_SHORT[fl.kase] || fl.kase) + '</td><td>' + new Date(fl.updatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) + (fl.updatedBy ? ' · ' + esc(fl.updatedBy) : '') + (filedAny(fl.data) ? ' · <span class="pill green">Filed</span>' : '') + '</td><td class="actions">' + openBtn(fl, true) + '</td></tr>').join('') + '</table>' : '<div class="empty">Nothing yet.</div>') + '</div>';
-  if ($('dashBody')) $('dashBody').innerHTML = html;
-};
 
 /* =====================================================================
    GENERATE
@@ -153,7 +123,7 @@ const AUD_EXTRA = `<h3>Auditor Letters</h3><div class="grid">
   <div><label>UDIN (eligibility certificate)</label><input data-f="udin" placeholder="Optional"></div>
   <div><label>Remuneration</label><input data-f="remun" placeholder="Blank = as mutually agreed"></div></div>`;
 const AFTER = (rows) => `<h3>After Filing on MCA</h3><div class="grid">${rows.map(([srn, date, form]) =>
-  `<div><label>${form} SRN</label><input data-f="${srn}" placeholder="Enter after filing"></div><div><label>Date ${form} Filed</label><input type="date" data-f="${date}"><div class="hint">Marks the deadline as done on the dashboard</div></div>`).join('')}</div>`;
+  `<div><label>${form} SRN</label><input data-f="${srn}" placeholder="Enter after filing"></div><div><label>Date ${form} Filed</label><input type="date" data-f="${date}"><div class="hint">Marks this step as done in the compliance timeline</div></div>`).join('')}</div>`;
 
 const FIELDS = {
   first: `<div class="grid">
@@ -348,12 +318,13 @@ const CASE_GROUPS = [
 ];
 
 PAGES.generate = async params => {
-  if (params.get('client')) { G.clientId = params.get('client'); G.kase = params.get('case') || G.kase; }
+  if (params.get('client')) { if (String(params.get('client')) !== String(G.clientId)) { G.kase = ''; G.dirIdx = [0]; G.dirIndex = 0; } G.clientId = params.get('client'); G.kase = params.get('case') || G.kase; }
   if (!S.clients.some(c => String(c.id) === String(G.clientId))) G.clientId = '';
   if (G.kase && !DC.CASES.includes(G.kase)) G.kase = '';
-  $('view').innerHTML = `<div class="pagehead"><div><h1>Generate Documents</h1><p class="sub">Select a client and case, fill the details, and download Word files on letterhead.</p></div><span class="saved" id="savedNote"></span></div>
-  <div class="card"><h2><span class="step">1</span>Client</h2><div class="grid">
-   <div><label>Client (Company) <span class="req">*</span></label><select id="g-client"></select></div>
+  const wc = client();
+  if (!wc) { location.hash = '#/clients'; return; }
+  $('view').innerHTML = `<div class="pagehead"><div><a class="backlink" href="#/clients">← All clients</a><h1>${esc(wc.name)}</h1><p class="sub">${wc.type === 'llp' ? 'LLPIN' : 'CIN'}: ${esc(wc.cin || '—')} · Choose a case, fill the details and download Word files on letterhead.</p></div><div class="row"><span class="saved" id="savedNote"></span><a class="btn ghostlink sm" href="#/clients?edit=${wc.id}">Edit client</a></div></div>
+  <div class="card"><h2><span class="step">1</span>Signatories</h2><div class="grid">
    <div id="g-cawrap"><label id="g-calabel">Auditor (CA Firm) <span class="req">*</span></label><select id="g-ca"></select></div>
    <div><label>Signing Director(s) — company documents <span class="req">*</span></label><div id="g-dir" class="dirpick"></div><div class="hint">Tick one or more. Two are needed for the Board's Report, financial statements and share certificates.</div></div></div>
    <div id="g-info" class="hint" style="margin-top:8px"></div></div>
@@ -363,10 +334,7 @@ PAGES.generate = async params => {
    <div class="row"><button class="ghost sm" id="g-selall">Select / unselect all</button><button id="g-zip">⬇ Generate &amp; Download</button></div></div>
    <p class="hint" style="margin:6px 0 14px">Tick the documents you need and click <b>Generate &amp; Download</b> (one Word file, or a ZIP when several are ticked) — or use <b>Generate Word</b> on a single document.</p><div class="docs" id="g-doclist"></div></div>`;
 
-  $('g-client').innerHTML = '<option value="">— Select client —</option>' + S.clients.map(c => '<option value="' + c.id + '">' + esc(c.name) + '</option>').join('');
   $('g-ca').innerHTML = '<option value="">— Select CA firm —</option>' + S.cas.map(a => '<option value="' + a.id + '">' + esc(a.firm) + ' (' + esc(a.frn) + ')</option>').join('');
-  $('g-client').value = G.clientId;
-  $('g-client').onchange = async () => { G.clientId = $('g-client').value; G.dirIndex = 0; G.dirIdx = [0]; await loadFiling(); if ($('g-dir')) paint(); };
   $('g-ca').onchange = () => { G.caId = $('g-ca').value; queueSave(); paint(); };
   $('g-dir').onchange = e => {
     const i = parseInt(e.target.value, 10); if (isNaN(i)) return;
@@ -374,7 +342,6 @@ PAGES.generate = async params => {
     G.dirIndex = G.dirIdx[0] || 0; docKey = ''; queueSave(); paint();
   };
   $$('.case').forEach(el => el.onclick = async () => {
-    if (!G.clientId) return toast('Please select a client first.', true);
     G.kase = el.dataset.case; await loadFiling(); if (!$('g-dir')) return; paint(); $('g-form').scrollIntoView({ behavior: 'smooth' });
   });
   $('g-form').addEventListener('input', e => { if (e.target.dataset.f) { G.form[e.target.dataset.f] = e.target.value; queueSave(); paintTimeline(); } });
@@ -553,7 +520,7 @@ async function saveLH(owner, id, st) {
    CLIENTS
    ===================================================================== */
 let editClient = null, clientLH = null;
-PAGES.clients = () => {
+PAGES.clients = params => {
   $('view').innerHTML = `<div class="pagehead"><div><h1>Clients</h1><p class="sub">Company master — shared by the whole team. Used on the company letterhead, resolutions and annual filing.</p></div><div class="row"><a class="btn ghostlink" href="/api/import/template">⬇ Excel template</a><button class="gold" id="c-import">⬆ Import from Excel</button><input type="file" id="c-importfile" accept=".xlsx" class="hidden"><button id="c-add">+ Add Client</button></div></div>
   <div class="card hidden" id="c-importbox"><h2>Import clients from Excel</h2><p class="hint">Download the template, fill one company per row, then upload it here. Existing clients are matched by CIN.</p>
    <div class="row"><select id="c-importmode" style="max-width:340px"><option value="skip">Skip clients whose CIN already exists</option><option value="update">Update existing clients with the Excel data</option></select><button id="c-importgo">Choose file &amp; import</button><button class="ghost" id="c-importclose">Close</button></div><div id="c-importres" style="margin-top:12px"></div></div>
@@ -601,6 +568,8 @@ PAGES.clients = () => {
   $('c-search').oninput = listClients;
   $('c-save').onclick = saveClient;
   listClients();
+  const ed = params && params.get('edit') && S.clients.find(c => String(c.id) === params.get('edit'));
+  if (ed) openClient(ed);
 };
 function addDirRow(d) {
   const r = document.createElement('div'); r.className = 'dirrow'; r._sign = d.sign || null;
@@ -655,7 +624,7 @@ function listClients() {
   const list = S.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (c.cin || '').toLowerCase().includes(q));
   $('c-count').textContent = S.clients.length + ' client' + (S.clients.length === 1 ? '' : 's');
   $('c-list').innerHTML = list.length ? '<table class="tbl"><tr><th>Company</th><th>CIN</th><th class="hide-m">Directors</th><th class="hide-m">Last updated</th><th></th></tr>' + list.map(c =>
-    '<tr><td><b>' + esc(c.name) + '</b>' + (c.lhName ? ' <span class="pill green">Word letterhead</span>' : '') + '<br><small class="hint">' + esc(H.oneLine(c.addr)) + '</small></td><td>' + esc(c.cin) + (c.incDate ? '<br><small class="hint">Inc. ' + H.sd(c.incDate) + '</small>' : '') + '</td><td class="hide-m">' + (c.directors || []).map(d => esc(d.name) + (d.din ? ' <small class="hint">(' + esc(d.din) + ')</small>' : '') + (d.sign ? ' <small class="hint">✍</small>' : '')).join('<br>') + '</td><td class="hide-m"><small class="hint">' + (c.updatedBy ? esc(c.updatedBy) + '<br>' : '') + new Date(c.updatedAt).toLocaleDateString('en-IN') + '</small></td><td class="actions"><button class="sm" data-gen="' + c.id + '">Generate</button> <button class="ghost sm" data-edit="' + c.id + '">Edit</button>' + (isAdmin() ? ' <button class="danger sm" data-del="' + c.id + '">Delete</button>' : '') + '</td></tr>').join('') + '</table>'
+    '<tr><td><a class="clink" href="#/generate?client=' + c.id + '"><b>' + esc(c.name) + '</b></a>' + (c.lhName ? ' <span class="pill green">Word letterhead</span>' : '') + '<br><small class="hint">' + esc(H.oneLine(c.addr)) + '</small></td><td>' + esc(c.cin) + (c.incDate ? '<br><small class="hint">Inc. ' + H.sd(c.incDate) + '</small>' : '') + '</td><td class="hide-m">' + (c.directors || []).map(d => esc(d.name) + (d.din ? ' <small class="hint">(' + esc(d.din) + ')</small>' : '') + (d.sign ? ' <small class="hint">✍</small>' : '')).join('<br>') + '</td><td class="hide-m"><small class="hint">' + (c.updatedBy ? esc(c.updatedBy) + '<br>' : '') + new Date(c.updatedAt).toLocaleDateString('en-IN') + '</small></td><td class="actions"><button class="sm" data-gen="' + c.id + '">Open &amp; prepare docs</button> <button class="ghost sm" data-edit="' + c.id + '">Edit</button>' + (isAdmin() ? ' <button class="danger sm" data-del="' + c.id + '">Delete</button>' : '') + '</td></tr>').join('') + '</table>'
     : '<div class="empty">' + (q ? 'No client matches your search.' : 'No clients yet. Click “+ Add Client”.') + '</div>';
   $$('#c-list [data-edit]').forEach(b => b.onclick = () => openClient(S.clients.find(c => String(c.id) === b.dataset.edit)));
   $$('#c-list [data-gen]').forEach(b => b.onclick = () => { location.hash = '#/generate?client=' + b.dataset.gen; });
@@ -756,9 +725,86 @@ PAGES.users = async () => {
 };
 
 /* =====================================================================
+   EDIT TEMPLATES
+   ===================================================================== */
+const TOK_STD = { companyName: 'Company name', cin: 'CIN / LLPIN', regdOffice: 'Registered office', companyEmail: 'Company email', incDate: 'Date of incorporation', authCap: 'Authorised capital', paidCap: 'Paid-up capital',
+  director1: 'First signing director', director1Din: 'First director DIN', director2: 'Second signing director', director2Din: 'Second director DIN', caFirm: 'CA firm name', frn: 'Firm Reg. No.', caPartner: 'CA partner', caMno: 'Membership No.', caAddress: 'CA firm address', caEmail: 'CA firm email', caPan: 'CA firm PAN' };
+const TP = { kase: '', variant: {}, docId: '', saved: [] };
+function caseFieldLabels(kase) {
+  const out = {}, box = document.createElement('div');
+  box.innerHTML = (FIELDS[kase] || '') + COMMON;
+  box.querySelectorAll('[data-f]').forEach(el => { if (el.tagName === 'SELECT' || el.dataset.f === 'lh') return; const lb = el.parentElement && el.parentElement.querySelector('label'); if (lb) out[el.dataset.f] = lb.textContent.replace(/\*/g, '').trim(); });
+  return out;
+}
+PAGES.templates = async () => {
+  const admin = isAdmin();
+  $('view').innerHTML = `<div class="pagehead"><div><h1>Edit Templates</h1><p class="sub">Change the wording of any document. Your template is used for every client from the next download.${admin ? '' : ' <b>View only</b> — ask an admin to change templates.'}</p></div></div>
+  <div class="card"><h2><span class="step">1</span>Case</h2><div class="grid"><div class="span2"><label>Case</label><select id="t-case"><option value="">— Select case —</option>${CASE_GROUPS.map(([t, list]) => '<optgroup label="' + esc(t) + '">' + list.map(([k, n]) => '<option value="' + k + '">' + esc(n) + '</option>').join('') + '</optgroup>').join('')}</select></div><div id="t-vars" class="span3 grid" style="padding:0"></div></div></div>
+  <div class="card hidden" id="t-docsbox"><h2><span class="step">2</span>Document</h2><div class="docs" id="t-docs"></div></div>
+  <div class="card hidden" id="t-edbox"><div class="row between"><h2 style="margin:0"><span class="step">3</span><span id="t-doctitle"></span></h2><span id="t-badge"></span></div>
+   <div class="tplwrap"><div><textarea id="t-body" class="tplbody" spellcheck="false"${admin ? '' : ' readonly'}></textarea>
+    <div class="row" style="margin-top:10px">${admin ? '<button id="t-save">Save template</button><button class="ghost" id="t-reset">Reset to standard</button>' : ''}<button class="ghost" id="t-std">Show standard wording</button></div></div>
+    <div class="tplside"><h3 style="margin-top:0">Placeholders</h3><p class="hint">Click to insert at the cursor. Filled in from the client, CA firm and case details.</p><div id="t-chips" class="chips"></div>
+     <h3>How to write</h3><div class="hint tplhelp">
+      <div>Line style at the start of a line, e.g. <code>[c b u]</code> = centred, bold, underlined</div><div><code>c</code> centre · <code>r</code> right · <code>l</code> left (default: justified)</div>
+      <div><code>b</code> bold · <code>u</code> underline · <code>h</code> numbered point (hanging) · <code>i</code> indent</div>
+      <div><code>big</code> / <code>small</code> text size · <code>t</code> no space after the line</div>
+      <div><code>**words**</code> bold words · <code>&lt;br&gt;</code> line break</div>
+      <div>Blank line = gap · <code>---</code> = new page</div>
+      <div><code>{{companyName}}</code> value · <code>{{COMPANYNAME}}</code> in CAPITALS</div>
+      <div><code>{{bmDate:short}}</code> 01.04.2026 · <code>:day</code> weekday · <code>:ord</code> 1st, 2nd</div>
+      <div><code>[[signature]]</code>, <code>[[table#1]]</code> … keep these lines: they bring in signatures, addresses and tables.</div></div></div></div></div>`;
+  try { TP.saved = await api('GET', '/api/templates'); } catch (e) { TP.saved = []; }
+  const vkey = () => DC.variantKey(TP.kase, TP.variant);
+  const isSaved = id => TP.saved.some(t => t.kase === TP.kase && t.variant === vkey() && t.docId === id);
+  const paintDocs = () => {
+    const docs = DC.templateDocs(TP.kase, TP.variant);
+    $('t-docsbox').classList.toggle('hidden', !TP.kase); $('t-edbox').classList.add('hidden');
+    $('t-docs').innerHTML = docs.map(d => '<div class="doc' + (d.fixed ? ' off' : '') + '" ' + (d.fixed ? '' : 'data-tdoc="' + d.id + '"') + '><div class="t"><b>' + d.no + '. ' + esc(d.title) + '</b><small>' + esc(d.sub || '') + '</small></div>' +
+      (d.fixed ? '<span class="pill grey">Fixed format</span>' : isSaved(d.id) ? '<span class="pill green">Customised</span>' : '<span class="pill gold">Built-in</span>') + '</div>').join('');
+    $$('[data-tdoc]').forEach(el => el.onclick = () => openDoc(el.dataset.tdoc));
+  };
+  const insert = t => { const ta = $('t-body'); if (ta.readOnly) return; const a = ta.selectionStart, b = ta.selectionEnd; ta.value = ta.value.slice(0, a) + t + ta.value.slice(b); ta.focus(); ta.selectionStart = ta.selectionEnd = a + t.length; };
+  const openDoc = async id => {
+    TP.docId = id;
+    const d = DC.templateDocs(TP.kase, TP.variant).find(z => z.id === id), std = DC.templateText(TP.kase, TP.variant, id);
+    let saved = null; try { saved = await api('GET', '/api/templates/' + TP.kase + '/' + id + '?variant=' + encodeURIComponent(vkey())); } catch (e) { fail(e); }
+    $('t-edbox').classList.remove('hidden');
+    $('t-doctitle').textContent = d.no + '. ' + d.title;
+    $('t-badge').innerHTML = saved ? '<span class="pill green">Customised</span>' : '<span class="pill gold">Built-in wording</span>';
+    $('t-body').value = saved ? saved.body : std;
+    const labels = Object.assign({}, TOK_STD, caseFieldLabels(TP.kase));
+    const keys = [...new Set([...DC.placeholders(std), ...Object.keys(caseFieldLabels(TP.kase))])];
+    $('t-chips').innerHTML = keys.map(k => '<button class="chip" data-tok="' + esc(k) + '" title="' + esc(labels[k] || k) + '">' + esc(labels[k] || k) + '<small>{{' + esc(k) + '}}</small></button>').join('');
+    $$('[data-tok]').forEach(b => b.onclick = () => insert('{{' + b.dataset.tok + '}}'));
+    $$('[data-tdoc]').forEach(el => el.classList.toggle('sel', el.dataset.tdoc === id));
+    $('t-std').onclick = () => { if (admin && !confirm('Replace the editor text with the standard wording? (Nothing is saved until you click Save.)')) return; $('t-body').value = std; };
+    if (admin) {
+      $('t-save').onclick = async () => {
+        try { await api('PUT', '/api/templates/' + TP.kase + '/' + id, { variant: vkey(), body: $('t-body').value }); TP.saved = await api('GET', '/api/templates'); $('t-badge').innerHTML = '<span class="pill green">Customised</span>'; paintDocsKeep(); toast('Template saved — used from the next download'); } catch (e) { fail(e); }
+      };
+      $('t-reset').onclick = async () => {
+        if (!confirm('Go back to the standard wording for this document?')) return;
+        try { await api('DELETE', '/api/templates/' + TP.kase + '/' + id + '?variant=' + encodeURIComponent(vkey())); TP.saved = await api('GET', '/api/templates'); $('t-body').value = std; $('t-badge').innerHTML = '<span class="pill gold">Built-in wording</span>'; paintDocsKeep(); toast('Standard wording restored'); } catch (e) { fail(e); }
+      };
+    }
+    $('t-edbox').scrollIntoView({ behavior: 'smooth' });
+  };
+  const paintDocsKeep = () => { const id = TP.docId, open = !$('t-edbox').classList.contains('hidden'); paintDocs(); if (open) { $('t-edbox').classList.remove('hidden'); $$('[data-tdoc]').forEach(el => el.classList.toggle('sel', el.dataset.tdoc === id)); } };
+  const paintVars = () => {
+    const vs = DC.VARIANTS[TP.kase] || [];
+    $('t-vars').innerHTML = vs.map(([k, lab, opts]) => '<div><label>' + esc(lab) + '</label><select data-tv="' + k + '">' + opts.map(([v, n]) => '<option value="' + v + '"' + (TP.variant[k] === v ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select></div>').join('') +
+      (vs.length ? '<div class="span3 hint">Each combination has its own template.</div>' : '');
+    $$('[data-tv]').forEach(sel => sel.onchange = () => { TP.variant[sel.dataset.tv] = sel.value; paintDocs(); });
+  };
+  $('t-case').onchange = () => { TP.kase = $('t-case').value; TP.variant = {}; (DC.VARIANTS[TP.kase] || []).forEach(([k, , o]) => TP.variant[k] = o[0][0]); paintVars(); paintDocs(); };
+  if (TP.kase) { $('t-case').value = TP.kase; paintVars(); paintDocs(); }
+};
+
+/* =====================================================================
    ACTIVITY LOG (admin)
    ===================================================================== */
-const ACT = { login: 'Logged in', setup: 'Setup', password: 'Password', 'user.create': 'Added user', 'user.update': 'Updated user', 'client.create': 'Added client', 'client.update': 'Edited client', 'client.delete': 'Deleted client', 'ca.create': 'Added CA firm', 'ca.update': 'Edited CA firm', 'ca.delete': 'Deleted CA firm', generate: 'Generated', backup: 'Backup' };
+const ACT = { 'template.save': 'Edited template', 'template.reset': 'Reset template', login: 'Logged in', setup: 'Setup', password: 'Password', 'user.create': 'Added user', 'user.update': 'Updated user', 'client.create': 'Added client', 'client.update': 'Edited client', 'client.delete': 'Deleted client', 'ca.create': 'Added CA firm', 'ca.update': 'Edited CA firm', 'ca.delete': 'Deleted CA firm', generate: 'Generated', backup: 'Backup' };
 PAGES.activity = async () => {
   $('view').innerHTML = '<div class="pagehead"><div><h1>Activity Log</h1><p class="sub">Last 300 actions by the team.</p></div></div><div class="card"><div id="act">Loading…</div></div>';
   let rows; try { rows = await api('GET', '/api/activity'); } catch (e) { return fail(e); }

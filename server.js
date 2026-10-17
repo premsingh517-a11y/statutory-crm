@@ -10,6 +10,7 @@ const JSZip = require('jszip');
 const db = require('./lib/db');
 const { buildDocx } = require('./lib/docx-builder');
 const DC = require('./public/js/docs-content.js');
+const LH = require('./lib/letterhead');
 
 const PROD = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
@@ -18,7 +19,7 @@ if (PROD && db.pool && !process.env.SESSION_SECRET) { console.error('SESSION_SEC
 const app = express();
 app.set('trust proxy', 1); // Render runs behind a proxy (needed for secure cookies)
 app.disable('x-powered-by');
-app.use(express.json({ limit: '3mb' }));
+app.use(express.json({ limit: '12mb' }));
 app.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('X-Frame-Options', 'SAMEORIGIN');
@@ -50,14 +51,17 @@ function cleanLogo(l) {
   if (!(w > 0 && h > 0)) return null;
   return { data: l.data, w, h };
 }
-const CLIENT_FIELDS = ['name', 'cin', 'incDate', 'type', 'pan', 'addr', 'email', 'phone', 'web', 'csName', 'csMno'];
+const CLIENT_FIELDS = ['name', 'cin', 'incDate', 'type', 'pan', 'addr', 'email', 'phone', 'web', 'csName', 'csMno', 'authCap', 'paidCap', 'faceValue'];
 function cleanClient(b) {
   const c = {};
   CLIENT_FIELDS.forEach(k => { c[k] = str(b[k], k === 'addr' ? 600 : 200); });
   c.cin = c.cin.toUpperCase(); c.pan = c.pan.toUpperCase();
   c.directors = (Array.isArray(b.directors) ? b.directors : []).slice(0, 15)
-    .map(d => ({ name: str(d && d.name, 120), din: str(d && d.din, 8), desig: str(d && d.desig, 60) || 'Director' }))
+    .map(d => ({ name: str(d && d.name, 120), din: str(d && d.din, 8), desig: str(d && d.desig, 60) || 'Director', sign: cleanLogo(d && d.sign) }))
     .filter(d => d.name);
+  c.shareholders = (Array.isArray(b.shareholders) ? b.shareholders : []).slice(0, 200)
+    .map(h => ({ name: str(h && h.name, 160), folio: str(h && h.folio, 30), shares: str(h && h.shares, 20), cat: str(h && h.cat, 40) }))
+    .filter(h => h.name);
   c.logo = cleanLogo(b.logo);
   return c;
 }
@@ -69,15 +73,18 @@ function cleanCA(b) {
   a.logo = cleanLogo(b.logo);
   return a;
 }
-const FORM_FIELDS = ['incDate', 'bmDate', 'bmTime', 'bmVenue', 'bmNotice', 'apptType', 'agmNo', 'term', 'agmDate', 'agmTime', 'fyEnd', 'agmVenue', 'agmNotice',
-  'prevFirm', 'prevFrn', 'prevEmail', 'prevAddr', 'reason', 'reasonText', 'resignLetter', 'vacDate', 'egmDate', 'egmTime', 'egmNotice', 'egmVenue',
-  'place', 'consentDate', 'udin', 'remun', 'lh', 'adt1Srn', 'adt1Date'];
+// meeting / case details: any simple field name; values are text, fields ending in "Sign" are signature images
 function cleanForm(b) {
   const f = {};
-  FORM_FIELDS.forEach(k => { f[k] = str(b && b[k], 400); });
+  if (!b || typeof b !== 'object') return f;
+  Object.keys(b).slice(0, 200).forEach(k => {
+    if (!/^[A-Za-z][A-Za-z0-9]{0,39}$/.test(k)) return;
+    if (/Sign$/.test(k)) { const img = cleanLogo(b[k]); if (img) f[k] = img; return; }
+    if (typeof b[k] === 'string' || typeof b[k] === 'number') f[k] = String(b[k]).slice(0, 6000);
+  });
   return f;
 }
-const CASES = ['first', 'agm', 'casual'];
+const CASES = DC.CASES;
 
 /* ---------------- auth ---------------- */
 function requireLogin(req, res, next) { if (req.session.user) return next(); bad(res, 'Please log in again.', 401); }
@@ -178,9 +185,10 @@ app.put('/api/users/:id', requireAdmin, async (req, res) => {
 });
 
 /* ---------------- clients & CA firms ---------------- */
-const withMeta = r => Object.assign({}, r.data, { id: r.id, updatedAt: r.updated_at, updatedBy: r.updated_by_name || null });
+const withMeta = r => Object.assign({}, r.data, { id: r.id, updatedAt: r.updated_at, updatedBy: r.updated_by_name || null, lhName: r.lh_name || null });
 async function listOf(table) {
-  const { rows } = await db.query(`SELECT t.*, u.name AS updated_by_name FROM ${table} t LEFT JOIN users u ON u.id=t.updated_by ORDER BY t.id`);
+  const { rows } = await db.query(`SELECT t.*, u.name AS updated_by_name, fl.name AS lh_name FROM ${table} t LEFT JOIN users u ON u.id=t.updated_by
+    LEFT JOIN files fl ON fl.owner_type='${table}' AND fl.owner_id=t.id ORDER BY t.id`);
   return rows.map(withMeta);
 }
 app.get('/api/clients', requireLogin, async (req, res) => res.json(await listOf('clients')));
@@ -205,6 +213,7 @@ async function saveClient(req, res, id) {
 app.delete('/api/clients/:id', requireAdmin, async (req, res) => {
   const r = await db.query('DELETE FROM clients WHERE id=$1 RETURNING data', [parseInt(req.params.id, 10)]);
   if (!r.rows.length) return bad(res, 'Client not found.', 404);
+  await db.query("DELETE FROM files WHERE owner_type='clients' AND owner_id=$1", [parseInt(req.params.id, 10)]);
   db.log(req.session.user.id, 'client.delete', r.rows[0].data.name);
   res.json({ ok: true });
 });
@@ -228,9 +237,47 @@ async function saveCA(req, res, id) {
 app.delete('/api/cas/:id', requireAdmin, async (req, res) => {
   const r = await db.query('DELETE FROM cas WHERE id=$1 RETURNING data', [parseInt(req.params.id, 10)]);
   if (!r.rows.length) return bad(res, 'CA firm not found.', 404);
+  await db.query("DELETE FROM files WHERE owner_type='cas' AND owner_id=$1", [parseInt(req.params.id, 10)]);
   db.log(req.session.user.id, 'ca.delete', r.rows[0].data.firm);
   res.json({ ok: true });
 });
+
+/* ---------------- Word letterheads (company / CA firm) ---------------- */
+const OWNERS = { clients: 'clients', cas: 'cas' };
+app.put('/api/:owner/:id/letterhead', requireLogin, async (req, res) => {
+  const owner = OWNERS[req.params.owner], id = parseInt(req.params.id, 10);
+  if (!owner) return bad(res, 'Not found', 404);
+  const ex = await db.query(`SELECT 1 FROM ${owner} WHERE id=$1`, [id]);
+  if (!ex.rows.length) return bad(res, 'Record not found.', 404);
+  const name = str(req.body && req.body.name, 150) || 'letterhead.docx', data = String((req.body && req.body.data) || '').replace(/^data:[^,]*,/, '');
+  if (!/\.docx$/i.test(name)) return bad(res, 'Please upload a Word .docx file. (Open a .doc file in Word and use Save As → Word Document.)');
+  const buf = Buffer.from(data, 'base64');
+  if (!buf.length) return bad(res, 'The file is empty.');
+  if (buf.length > 5 * 1024 * 1024) return bad(res, 'The letterhead file is larger than 5 MB. Please compress the images inside it.');
+  try { await LH.inspect(buf); } catch (e) { return bad(res, e.message); }
+  await db.query('DELETE FROM files WHERE owner_type=$1 AND owner_id=$2', [owner, id]);
+  await db.query('INSERT INTO files (owner_type, owner_id, name, data) VALUES ($1,$2,$3,$4)', [owner, id, name, buf.toString('base64')]);
+  db.log(req.session.user.id, owner === 'cas' ? 'ca.update' : 'client.update', 'Uploaded Word letterhead: ' + name);
+  res.json({ ok: true, name });
+});
+app.delete('/api/:owner/:id/letterhead', requireLogin, async (req, res) => {
+  const owner = OWNERS[req.params.owner]; if (!owner) return bad(res, 'Not found', 404);
+  await db.query('DELETE FROM files WHERE owner_type=$1 AND owner_id=$2', [owner, parseInt(req.params.id, 10)]);
+  res.json({ ok: true });
+});
+app.get('/api/:owner/:id/letterhead', requireLogin, async (req, res) => {
+  const owner = OWNERS[req.params.owner]; if (!owner) return bad(res, 'Not found', 404);
+  const { rows } = await db.query('SELECT name, data FROM files WHERE owner_type=$1 AND owner_id=$2', [owner, parseInt(req.params.id, 10)]);
+  if (!rows.length) return bad(res, 'No letterhead uploaded.', 404);
+  res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.set('Content-Disposition', 'attachment; filename="' + rows[0].name.replace(/[^\w.\- ]+/g, '_') + '"');
+  res.send(Buffer.from(rows[0].data, 'base64'));
+});
+async function letterheadFile(owner, id) {
+  if (!id) return null;
+  const { rows } = await db.query('SELECT data FROM files WHERE owner_type=$1 AND owner_id=$2', [owner, id]);
+  return rows.length ? Buffer.from(rows[0].data, 'base64') : null;
+}
 
 /* ---------------- filings (saved meeting details) ---------------- */
 app.get('/api/filings', requireLogin, async (req, res) => {
@@ -270,6 +317,19 @@ app.post('/api/generate', requireLogin, async (req, res) => {
   const f = cleanForm(b.form);
   const ctx = { kase, c, a, d, f };
   await saveFiling(clientId, kase, b, req.session.user.id);
+  const lhFiles = { company: await letterheadFile('clients', clientId), ca: await letterheadFile('cas', caId) };
+
+  // Director appointment: optionally add the new director to the client's director list
+  if (kase === 'dirapp' && f.addToMaster === 'yes' && f.appName) {
+    const exists = (c.directors || []).some(x => (f.appDin && x.din === f.appDin) || x.name.toLowerCase() === f.appName.toLowerCase());
+    if (!exists) {
+      const nd = { name: f.appName.slice(0, 120), din: (f.appDin || '').slice(0, 8), desig: f.apptMode === 'egm' ? 'Director' : 'Additional Director', sign: f.apptSign || null };
+      const updated = Object.assign({}, c, { directors: [...(c.directors || []), nd] });
+      await db.query('UPDATE clients SET data=$1, updated_by=$2, updated_at=now() WHERE id=$3', [updated, req.session.user.id, clientId]);
+      db.log(req.session.user.id, 'client.update', c.name + ': added director ' + nd.name);
+      res.set('X-Masters-Changed', '1');
+    }
+  }
 
   const all = DC.docDefs(ctx);
   const wanted = Array.isArray(b.docIds) && b.docIds.length ? all.filter(x => b.docIds.includes(x.id)) : all;
@@ -277,7 +337,7 @@ app.post('/api/generate', requireLogin, async (req, res) => {
 
   const safe = s => String(s || '').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
   if (wanted.length === 1 && !b.zip) {
-    const buf = await buildDocx(wanted[0], ctx);
+    const buf = await buildDocx(wanted[0], ctx, lhFiles);
     const name = DC.fileName(wanted[0], c.name);
     db.log(req.session.user.id, 'generate', c.name + ' — ' + DC.CASE_SHORT[kase] + ': ' + wanted[0].title);
     res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -285,7 +345,7 @@ app.post('/api/generate', requireLogin, async (req, res) => {
     return res.send(buf);
   }
   const zip = new JSZip();
-  for (const def of wanted) zip.file(DC.fileName(def, c.name), await buildDocx(def, ctx));
+  for (const def of wanted) zip.file(DC.fileName(def, c.name), await buildDocx(def, ctx, lhFiles));
   const out = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
   const name = safe(c.name) + '_' + safe(DC.CASE_SHORT[kase]) + '.zip';
   db.log(req.session.user.id, 'generate', c.name + ' — ' + DC.CASE_SHORT[kase] + ': ' + wanted.length + ' documents (ZIP)');

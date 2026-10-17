@@ -4,9 +4,15 @@ Team portal for NeuSource executives: save client and CA firm details once, then
 auditor appointment documents on letterhead (Word .docx) with the e-Form ADT-1 data sheet.
 
 **Cases covered**
-1. First Auditor — Board appoints within 30 days of incorporation (Sec 139(6))
-2. Appointment at AGM — 5-year term (Sec 139(1))
-3. Casual Vacancy — resignation (with EGM) or other reason (Sec 139(8))
+1. Auditor — First Auditor within 30 days of incorporation (Sec 139(6)), Appointment at AGM (Sec 139(1)), Casual Vacancy (Sec 139(8)) → e-Form ADT-1
+2. Director — Appointment as Additional Director / at EGM (Sec 152, 161) with DIR-2, DIR-8, MBP-1; Resignation (Sec 168) → e-Form DIR-12
+3. Annual filing — Board's Report (full or Rule 8A abridged) with AOC-2, AGM notice with MGT-11 and attendance slip, shorter-notice consent, resolutions, list of shareholders → e-Form AOC-4 and MGT-7 / MGT-7A
+   (financial statements and the auditors' report are not generated)
+
+**Letterheads and signatures**
+- Upload a Word (.docx) letterhead for each CA firm and each company. Documents are generated inside it — same header, footer, logo and margins.
+  Put the letterhead in the Word header if it should repeat on every page.
+- Upload a signature image for each director (client master) and for a new director (appointment case). It is printed above the name.
 
 **Built with:** Node.js 20+, Express, PostgreSQL, `docx` (Word files are made on the server).
 

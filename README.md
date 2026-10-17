@@ -3,11 +3,19 @@
 Team portal for NeuSource executives: save client and CA firm details once, then generate
 auditor appointment documents on letterhead (Word .docx) with the e-Form ADT-1 data sheet.
 
-**Cases covered**
-1. Auditor — First Auditor within 30 days of incorporation (Sec 139(6)), Appointment at AGM (Sec 139(1)), Casual Vacancy (Sec 139(8)) → e-Form ADT-1
-2. Director — Appointment as Additional Director / at EGM (Sec 152, 161) with DIR-2, DIR-8, MBP-1; Resignation (Sec 168) → e-Form DIR-12
-3. Annual filing — Board's Report (full or Rule 8A abridged) with AOC-2, AGM notice with MGT-11 and attendance slip, shorter-notice consent, resolutions, list of shareholders → e-Form AOC-4 and MGT-7 / MGT-7A
-   (financial statements and the auditors' report are not generated)
+**Cases covered** (16)
+1. Auditor — First Auditor (Sec 139(6)), Appointment at AGM (Sec 139(1)), Casual Vacancy (Sec 139(8)) → ADT-1
+2. Director — Appointment (Sec 152 / 161, DIR-2, DIR-8, MBP-1) and Resignation (Sec 168) → DIR-12
+3. Annual filing — Board's Report (Rule 8 / 8A) with AOC-2, AGM notice with MGT-11, resolutions, shareholder list → AOC-4, MGT-7 / 7A
+4. Share capital — Rights issue & allotment with SH-1 certificates (Sec 62(1)(a)) → PAS-3; Increase in authorised capital (Sec 61) → SH-7; Share transfer SH-4 (Sec 56)
+5. ROC — Shifting of registered office (Sec 12) → INC-22; Commencement of business (Sec 10A) → INC-20A; DPT-3; MSME-1
+6. Strike off (Sec 248(2)) with STK-3, STK-4 and statement of accounts → STK-2; LLP Form 11 & Form 8; Registers (MGT-1, Register of Directors & KMP)
+
+**Smart defaults:** AGM number (from the last AGM in the client master, or from the date of incorporation), AGM date (30 September, or the earlier due date),
+AGM notice (21 clear days before), Board meeting and its notice, EGM dates, offer periods etc. are filled automatically. They are shown with a light
+gold background and can be changed; changing one date updates the dates that depend on it.
+
+**Excel import:** Clients page → "Excel template", fill one company per row, then "Import from Excel". Existing CINs are skipped or updated.
 
 **Letterheads and signatures**
 - Upload a Word (.docx) letterhead for each CA firm and each company. Documents are generated inside it — same header, footer, logo and margins.

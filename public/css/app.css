@@ -169,3 +169,4 @@ button:disabled{opacity:.55;cursor:not-allowed}
   .tbl .hide-m{display:none}
 }
 @media(max-width:960px){.auth .formside{order:-1;padding-top:28px}.auth .hero ul{display:none}}
+input.autofill,textarea.autofill{background:#fffaf2;border-color:#ecd3a9}

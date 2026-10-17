@@ -103,8 +103,8 @@ function route() {
 /* =====================================================================
    DASHBOARD
    ===================================================================== */
-const FILING_KEYS = ['adt1', 'dir12', 'aoc4', 'mgt7'];
-const filedAny = d => !!(d.adt1Srn || d.dir12Srn || d.aoc4Srn || d.mgt7Srn);
+const FILING_KEYS = ['adt1', 'dir12', 'aoc4', 'mgt7', 'pas3', 'sh7', 'inc22', 'mgt14', 'inc20a', 'dpt3', 'msme1', 'stk2', 'form11', 'form8'];
+const filedAny = d => Object.keys(d || {}).some(k => /Srn$/.test(k) && d[k]);
 PAGES.dashboard = async () => {
   const v = $('view');
   v.innerHTML = '<div class="pagehead"><div><h1>Namaste, ' + esc(S.me.name.split(' ')[0]) + '</h1><p class="sub">Upcoming statutory deadlines across all clients.</p></div><a class="btn" href="#/generate">+ Generate Documents</a></div><div id="dashBody"><div class="card">Loading…</div></div>';
@@ -251,6 +251,91 @@ const FIELDS = {
     <div><label>POSH complaints received</label><input data-f="poshRecd" placeholder="0"></div><div><label>POSH complaints disposed</label><input data-f="poshDisp" placeholder="0"></div><div><label>Pending &gt; 90 days</label><input data-f="poshPend" placeholder="0"></div>
     <div data-show="full" class="span3"><label>Foreign exchange earnings / outgo</label><div class="grid" style="grid-template-columns:1fr 1fr"><input data-f="fxEarn" placeholder="Earnings: Nil"><input data-f="fxOut" placeholder="Outgo: Nil"></div></div></div>
     ${AFTER([['aoc4Srn', 'aoc4Date', 'AOC-4'], ['mgt7Srn', 'mgt7Date', 'MGT-7/7A']])}`,
+  allot: `<div class="grid">
+    <div><label>Type of issue</label><select data-f="issueType"><option value="rights">Rights issue to existing shareholders — Sec 62(1)(a)</option></select><div class="hint">Private placement (Sec 42, PAS-4) is not covered</div></div>
+    <div><label>Number of shares offered <span class="req">*</span></label><input data-f="offerShares" placeholder="e.g. 10000"></div>
+    <div><label>Premium per share (Rs.)</label><input data-f="premium" placeholder="0 = at par"></div>
+    <div class="span2"><label>Ratio / basis</label><input data-f="ratio" placeholder="Blank = in proportion to their existing shareholding"></div>
+    <div><label>Second director (signs share certificates)</label><select data-f="dir2Index" data-dirs></select></div>
+    <div><label>Date of Letter of Offer <span class="req">*</span></label><input type="date" data-f="offerDate"></div>
+    <div><label>Offer open for (days)</label><input type="number" min="1" data-f="offerDays" data-def="15"><div class="hint">Minimum 15 days (shorter only with 90% members' consent)</div></div>
+    <div><label>Last date of acceptance <span class="req">*</span></label><input type="date" data-f="lastDate"></div>
+    <div class="span3"><label>Company bank account (for payment)</label><input data-f="bank" placeholder="e.g. HDFC Bank, A/c No. ____, IFSC ____"></div></div>
+    ${BM(true)}
+    <h3>Allotment Board Meeting</h3><div class="grid">
+    <div><label>Allotment Meeting Date <span class="req">*</span></label><input type="date" data-f="alDate"></div>
+    <div><label>Time</label><input type="time" data-f="alTime" data-def="11:00"></div>
+    <div><label>Date of Notice</label><input type="date" data-f="alNotice"></div>
+    <div class="span3"><label>Venue</label><input data-f="alVenue" placeholder="Leave blank to use the Registered Office"></div>
+    <div class="span3"><label>Allottees <span class="req">*</span></label><textarea data-f="allottees" placeholder="One per line:  Name | Folio No. | No. of shares | Amount received (blank = shares × price) | Date of receipt | Mode"></textarea></div>
+    <div><label>First share certificate no.</label><input data-f="certFrom" placeholder="e.g. 3"></div>
+    <div><label>Distinctive no. starts from</label><input data-f="distFrom" placeholder="Blank = after existing shares"></div>
+    <div><label>After generating</label><select data-f="updateMaster"><option value="yes">Update shareholders & paid-up capital in client master</option><option value="no">Do not change the client master</option><option value="done">Already updated ✓</option></select></div></div>
+    ${AFTER([['pas3Srn', 'pas3Date', 'PAS-3']])}`,
+  authcap: `<div class="grid">
+    <div><label>Existing authorised capital (Rs.)</label><input data-f="oldCap"><div class="hint">From client master</div></div>
+    <div><label>New authorised capital (Rs.) <span class="req">*</span></label><input data-f="newCap" placeholder="e.g. 25,00,000"></div>
+    <div><label>Resolution required by Articles</label><select data-f="resType"><option value="ordinary">Ordinary resolution (Sec 61)</option><option value="special">Special resolution (if AoA requires) + MGT-14</option></select></div>
+    <div><label>After generating</label><select data-f="updateMaster"><option value="yes">Update authorised capital in client master</option><option value="no">Do not change the client master</option><option value="done">Already updated ✓</option></select></div></div>
+    ${BM(true)}${EGM('Extraordinary General Meeting')}${AFTER([['sh7Srn', 'sh7Date', 'SH-7']])}`,
+  transfer: `<div class="grid">
+    <div><label>Transferor (from shareholders) <span class="req">*</span></label><select data-f="fromIndex" data-holders></select></div>
+    <div><label>No. of shares <span class="req">*</span></label><input data-f="trShares"></div>
+    <div><label>Consideration (Rs.)</label><input data-f="consideration"><div class="hint">Stamp duty 0.015% is worked out</div></div>
+    <div><label>Share certificate no.</label><input data-f="certNo"></div>
+    <div><label>Distinctive no. from</label><input data-f="distFrom"></div><div><label>Distinctive no. to</label><input data-f="distTo"></div>
+    <div><label>Date of execution of SH-4 <span class="req">*</span></label><input type="date" data-f="execDate"></div>
+    <div><label>Date lodged with company</label><input type="date" data-f="lodgeDate"></div><div></div></div>
+    <h3>Transferee</h3><div class="grid">
+    <div><label>Name <span class="req">*</span></label><input data-f="toName"></div><div><label>Father's / spouse's name</label><input data-f="toFather"></div><div><label>PAN</label><input data-f="toPan" style="text-transform:uppercase"></div>
+    <div class="span2"><label>Address</label><input data-f="toAddr"></div><div><label>Email</label><input data-f="toEmail"></div>
+    <div><label>Occupation</label><input data-f="toOcc"></div><div><label>Folio no. (if existing member)</label><input data-f="toFolio"></div>
+    <div><label>After generating</label><select data-f="updateMaster"><option value="yes">Move the shares in the client master</option><option value="no">Do not change the client master</option><option value="done">Already updated ✓</option></select></div></div>
+    ${BM(true)}`,
+  regoffice: `<div class="grid">
+    <div><label>Type of change <span class="req">*</span></label><select data-f="scope"><option value="local">Within the same city / town / village — Board resolution</option><option value="roc">Outside local limits, same ROC — special resolution</option></select></div>
+    <div><label>Effective date <span class="req">*</span></label><input type="date" data-f="effDate"></div>
+    <div><label>Premises</label><select data-f="premises"><option value="rented">Rented / leased</option><option value="director">Owned by a director / relative</option><option value="owned">Owned by the company</option></select></div>
+    <div class="span3"><label>New registered office address <span class="req">*</span></label><textarea data-f="newAddr"></textarea></div>
+    <div><label>Owner of premises (for NOC) <span class="req">*</span></label><input data-f="ownerName"></div><div><label>Owner's relation (optional)</label><input data-f="ownerRel" placeholder="e.g. Director of the company"></div><div><label>Rent agreement date</label><input type="date" data-f="leaseDate"></div>
+    <div class="span2"><label>Owner's address</label><input data-f="ownerAddr"></div>
+    <div><label>After generating</label><select data-f="updateMaster"><option value="yes">Update address in client master</option><option value="no">Do not change the client master</option><option value="done">Already updated ✓</option></select></div></div>
+    ${BM(true)}<div data-show="roc">${EGM('Extraordinary General Meeting (special resolution)')}</div>${AFTER([['inc22Srn', 'inc22Date', 'INC-22']])}`,
+  inc20a: `<div class="grid">
+    <div class="span3"><label>Subscribers & payment</label><textarea data-f="subscribers" placeholder="Blank = taken from shareholders in client master. Or one per line:  Name | No. of shares | Amount paid | Date of payment | Mode / bank reference"></textarea></div>
+    <div class="span2"><label>Company bank account</label><input data-f="bank" placeholder="e.g. HDFC Bank, Palam branch"></div>
+    <div><label>Date of declaration</label><input type="date" data-f="declDate"></div></div>
+    ${BM(true)}${AFTER([['inc20aSrn', 'inc20aDate', 'INC-20A']])}`,
+  dpt3: `<div class="grid">
+    <div><label>Financial Year Ended <span class="req">*</span></label><input type="date" data-f="fyEnd"></div>
+    <div><label>Net worth as on FY end (Rs.)</label><input data-f="netWorth"></div>
+    <div><label>Auditor's certificate</label><select data-f="audCert"><option value="no">Not required</option><option value="yes">Make auditor's certificate (CA letterhead)</option></select></div>
+    <div class="span3"><label>Outstanding receipts not treated as deposits</label><textarea data-f="dptRows" placeholder="One per line:  Category | Name of party | Received during the year | Outstanding at year end&#10;e.g.  Loan from director | Krishan Pal Singh Rana | 2,00,000 | 5,00,000"></textarea><div class="hint">Lines with "director" or "relative" in the category also get a not-borrowed-funds declaration</div></div>
+    <div><label>Date of statement / declarations</label><input type="date" data-f="declDate"></div></div>
+    ${AFTER([['dpt3Srn', 'dpt3Date', 'DPT-3']])}`,
+  msme1: `<div class="grid">
+    <div><label>Half year <span class="req">*</span></label><select data-f="half"><option value="h1">April – September (due 31 October)</option><option value="h2">October – March (due 30 April)</option></select></div>
+    <div><label>Financial year ending (year)</label><input data-f="msmeYear" placeholder="e.g. 2027 for FY 2026-27"></div>
+    <div><label>Date of statement</label><input type="date" data-f="declDate"></div>
+    <div class="span3"><label>Dues to micro / small suppliers over 45 days <span class="req">*</span></label><textarea data-f="msmeRows" placeholder="One per line:  Supplier | PAN | Udyam No. | Amount due | Due since (DD/MM/YYYY) | Reason for delay"></textarea></div></div>
+    ${AFTER([['msmeSrn', 'msmeDate', 'MSME-1']])}`,
+  stk2: `<div class="grid">
+    <div class="span2"><label>Ground <span class="req">*</span></label><select data-f="ground"><option value="nobiz">No business / operation for the two immediately preceding financial years</option><option value="nocomm">Has not commenced business since incorporation</option></select></div>
+    <div><label>Statement of accounts as on <span class="req">*</span></label><input type="date" data-f="accDate"><div class="hint">Not older than 30 days when filing</div></div>
+    <div class="span3"><label>Statement of accounts items (optional)</label><textarea data-f="stkItems" placeholder="One per line:  Particulars | Amount   (blank = Assets Nil, Liabilities Nil)"></textarea></div>
+    <div><label>Date of STK-3 / STK-4</label><input type="date" data-f="bondDate"></div><div><label>Bank account closed on</label><input type="date" data-f="bankClosed"></div></div>
+    ${BM(true)}${EGM('Extraordinary General Meeting (special resolution)')}${AFTER([['stk2Srn', 'stk2Date', 'STK-2'], ['mgt14Srn', 'mgt14Date', 'MGT-14']])}`,
+  llp: `<div class="grid">
+    <div><label>Financial Year Ended <span class="req">*</span></label><input type="date" data-f="fyEnd"></div>
+    <div><label>Partners approved accounts on <span class="req">*</span></label><input type="date" data-f="approveDate"></div>
+    <div><label>Second designated partner (signs)</label><select data-f="dir2Index" data-dirs></select></div>
+    <div class="span3"><label>Partners & contribution</label><textarea data-f="partners" placeholder="Blank = taken from the client's directors. Or one per line:  Name | DPIN / PAN | Designated? (Yes/No) | Contribution (Rs.)"></textarea></div>
+    <div><label>Turnover for the year (Rs.)</label><input data-f="turnover"></div>
+    <div><label>Solvency</label><select data-f="solvent"><option value="yes">Able to pay debts in full</option><option value="no">Not able to pay debts in full</option></select></div>
+    <div><label>Changes in partners during the year</label><input data-f="partnerChanges" placeholder="None"></div></div>
+    ${AFTER([['form11Srn', 'form11Date', 'Form 11'], ['form8Srn', 'form8Date', 'Form 8']])}`,
+  registers: `<div class="grid"><div><label>Registers as on</label><input type="date" data-f="asOn"></div></div>
+    <p class="hint">The Register of Members and the Register of Directors are pre-filled from the client master (shareholders and directors). Columns the portal does not hold are left blank to complete by hand.</p>`,
 };
 const COMMON = `<h3>Common Details</h3><div class="grid">
   <div><label>Place (for signatures) <span class="req">*</span></label><input data-f="place" placeholder="e.g. New Delhi"></div>
@@ -259,6 +344,9 @@ const CASE_GROUPS = [
   ['Auditor Appointment · e-Form ADT-1', [['first', 'First Auditor', 'Board appoints within 30 days of incorporation — Sec 139(6)'], ['agm', 'Appointment at AGM', 'Members appoint at AGM for 5 years — Sec 139(1)'], ['casual', 'Casual Vacancy', 'Resignation / other vacancy filled by Board — Sec 139(8)']]],
   ['Director Change · e-Form DIR-12', [['dirapp', 'Director Appointment', 'DIR-2, DIR-8, MBP-1, resolution, appointment letter — Sec 152 / 161'], ['dirres', 'Director Resignation', 'Resignation letter, resolution, acknowledgement — Sec 168']]],
   ['Annual Filing · AOC-4 & MGT-7 / 7A', [['annual', 'AOC-4 & MGT-7 / 7A', 'Board’s Report, AGM notice, MGT-11, resolutions, shareholder list (no balance sheet / audit report)']]],
+  ['Share Capital', [['allot', 'Rights Issue & Allotment', 'Offer letters, allotment resolution, SH-1 certificates, PAS-3 — Sec 62(1)(a)'], ['authcap', 'Increase Authorised Capital', 'Board & EGM resolutions, altered Clause V, SH-7 — Sec 61 / 64'], ['transfer', 'Share Transfer', 'Form SH-4, Board approval, letter to transferee — Sec 56']]],
+  ['ROC Compliance', [['regoffice', 'Shift Registered Office', 'Board / special resolution, owner NOC, INC-22 — Sec 12'], ['inc20a', 'Commencement of Business', 'Board resolution, director declaration, INC-20A — Sec 10A'], ['dpt3', 'DPT-3 (Deposits Return)', 'Statement of exempt receipts, director declarations, auditor certificate'], ['msme1', 'MSME-1 (Half-yearly)', 'Statement of dues to micro & small suppliers over 45 days']]],
+  ['Closure, LLP & Registers', [['stk2', 'Strike Off (STK-2)', 'Resolutions, STK-3 bonds, STK-4 affidavits, statement of accounts — Sec 248(2)'], ['llp', 'LLP Form 11 & Form 8', 'Partners’ resolution, statement of solvency, data sheet'], ['registers', 'Statutory Registers', 'Register of Members (MGT-1) and Register of Directors & KMP']]],
 ];
 
 PAGES.generate = async params => {
@@ -298,7 +386,7 @@ PAGES.generate = async params => {
 };
 const client = () => S.clients.find(c => String(c.id) === String(G.clientId));
 const caFirm = () => S.cas.find(a => String(a.id) === String(G.caId));
-const needsCA = k => ['first', 'agm', 'casual', 'annual'].includes(k);
+const needsCA = k => ['first', 'agm', 'casual', 'annual', 'dpt3', 'stk2'].includes(k);
 const ctx = () => { const c = client() || {}; return { kase: G.kase, c, a: caFirm() || {}, d: (c.directors || [])[G.dirIndex] || {}, f: G.form }; };
 
 async function loadFiling() {
@@ -311,8 +399,8 @@ async function loadFiling() {
   if (saved.caId && S.cas.some(a => a.id === saved.caId)) G.caId = String(saved.caId);
   G.dirIndex = saved.dirIndex && c.directors && c.directors[saved.dirIndex] ? saved.dirIndex : 0;
   if (!G.form.incDate && c.incDate) G.form.incDate = c.incDate;
-  if (G.kase === 'annual' && !G.form.fyEnd) { const t = todayISO(); G.form.fyEnd = (H.fyStart(t) || new Date().getFullYear()) + '-03-31'; }
-  if (G.kase === 'annual' && G.form.dir2Index === undefined && c.directors && c.directors.length > 1) G.form.dir2Index = '1';
+  try { G.auto = JSON.parse(G.form.autoJson || '{}') || {}; } catch (e) { G.auto = {}; }
+  if (['annual', 'allot', 'llp'].includes(G.kase) && G.form.dir2Index === undefined && c.directors && c.directors.length > 1) G.form.dir2Index = '1';
   docKey = '';
 }
 function autoFill() { if (G.kase === 'agm' && G.form.agmDate && !G.form.fyEnd) { G.form.fyEnd = H.fyStart(G.form.agmDate) + '-03-31'; const el = $$('[data-f="fyEnd"]')[0]; if (el) el.value = G.form.fyEnd; } }
@@ -330,10 +418,10 @@ function paint() {
   $('g-dir').innerHTML = c && c.directors && c.directors.length ? dirOptions(c) : '<option value="">— no directors —</option>';
   $('g-dir').value = String(G.dirIndex); $('g-ca').value = G.caId || '';
   $('g-cawrap').classList.toggle('hidden', !!G.kase && !needsCA(G.kase));
-  $('g-calabel').innerHTML = (G.kase === 'annual' ? 'Statutory Auditor (CA Firm)' : 'Auditor being appointed (CA Firm)') + ' <span class="req">*</span>';
+  $('g-calabel').innerHTML = (G.kase === 'annual' || G.kase === 'dpt3' ? 'Statutory Auditor (CA Firm)' : G.kase === 'stk2' ? 'CA Firm (certifies statement of accounts)' : 'Auditor being appointed (CA Firm)') + ' <span class="req">*</span>';
   if (!S.clients.length) $('g-info').innerHTML = 'No clients yet — <a href="#/clients">add a client</a> first.';
   else if (!S.cas.length && needsCA(G.kase)) $('g-info').innerHTML = 'No CA firm yet — <a href="#/cas">add a CA firm</a> first.';
-  else $('g-info').textContent = c ? 'CIN: ' + (c.cin || '—') + ' · Regd. Office: ' + H.oneLine(c.addr) + (c.incDate ? ' · Incorporated: ' + H.sd(c.incDate) : '') : '';
+  else $('g-info').textContent = c ? (c.type === 'llp' ? 'LLPIN: ' : 'CIN: ') + (c.cin || '—') + ' · Regd. Office: ' + H.oneLine(c.addr) + (c.incDate ? ' · Incorporated: ' + H.sd(c.incDate) : '') : '';
   $$('.case').forEach(el => el.classList.toggle('sel', el.dataset.case === G.kase));
   const show = !!(c && G.kase);
   $('g-form').classList.toggle('hidden', !show); $('g-docs').classList.toggle('hidden', !show);
@@ -341,15 +429,23 @@ function paint() {
   $('g-title').textContent = DC.CASE_TITLE[G.kase];
   if ($('g-fields').dataset.kase !== G.kase) { $('g-fields').innerHTML = FIELDS[G.kase]; $('g-fields').dataset.kase = G.kase; bindAppSign(); }
   $$('#g-form [' + DIRSEL + ']').forEach(sel => { const cur = G.form[sel.dataset.f]; sel.innerHTML = dirOptions(c, true); if (cur !== undefined) sel.value = cur; });
+  $$('#g-form [data-holders]').forEach(sel => { const cur = G.form[sel.dataset.f]; sel.innerHTML = '<option value="">— Select —</option>' + (c.shareholders || []).map((h, i) => '<option value="' + i + '">' + esc(h.name) + ' (' + esc(h.shares || 0) + ' shares)</option>').join(''); if (cur !== undefined) sel.value = cur; });
+  // smart defaults: fill empty / still-auto fields (dates, AGM number) — the user can always change them
+  G.auto = G.auto || {};
+  const dd = DC.defaults(ctx(), G.auto), changed = Object.keys(dd).length;
+  Object.entries(dd).forEach(([k, val]) => { G.form[k] = val; G.auto[k] = val; });
+  if (changed) { G.form.autoJson = JSON.stringify(G.auto); queueSave(); }
   $$('#g-form [data-f]').forEach(el => {
     const k = el.dataset.f;
-    if (!(k in G.form) || G.form[k] === undefined) G.form[k] = el.dataset.def || (el.tagName === 'SELECT' && !el.hasAttribute(DIRSEL) ? el.options[0].value : '');
+    if (!(k in G.form) || G.form[k] === undefined) G.form[k] = el.dataset.def || (el.tagName === 'SELECT' && !el.hasAttribute(DIRSEL) && !el.hasAttribute('data-holders') ? el.options[0].value : '');
     if (document.activeElement !== el && el.value !== G.form[k]) el.value = G.form[k];
+    const isAuto = !!G.auto[k] && G.form[k] === G.auto[k] && el.tagName !== 'SELECT';
+    el.classList.toggle('autofill', isAuto); el.title = isAuto ? 'Filled automatically — change if needed' : '';
   });
   const f = G.form, vis = (sel, on) => $$('[data-show="' + sel + '"]').forEach(el => el.classList.toggle('hidden', !on));
   vis('reason-other', f.reason === 'other'); vis('reason-resign', f.reason !== 'other'); vis('prev-agm', f.apptType !== 're');
   vis('regularise', f.apptMode !== 'egm'); vis('egm', f.apptMode === 'egm' || f.regularise === 'yes');
-  vis('rpt', f.rpt === 'yes'); vis('full', f.coSize === 'other');
+  vis('rpt', f.rpt === 'yes'); vis('full', f.coSize === 'other'); vis('roc', f.scope === 'roc');
   paintTimeline(); paintDocs();
 }
 function bindAppSign() {
@@ -391,7 +487,11 @@ async function download(ids, zip) {
     const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000);
     if ($('savedNote')) $('savedNote').textContent = '✓ Saved for the team';
     toast(zip ? 'ZIP downloaded' : 'Word file downloaded');
-    if (r.headers.get('x-masters-changed')) { await loadMasters(); toast('New director added to the client’s director list'); if ($('g-dir')) { docKey = ''; paint(); } }
+    if (r.headers.get('x-masters-changed')) {
+      await loadMasters(); toast('Client master updated');
+      if (G.form.updateMaster === 'yes') { G.form.updateMaster = 'done'; queueSave(); }
+      if ($('g-dir')) { docKey = ''; paint(); }
+    }
   } catch (e) { fail(e instanceof TypeError ? new Error(OFFLINE) : e); }
   btn.disabled = false; btn.innerHTML = '⬇ Generate &amp; Download';
 }
@@ -449,13 +549,17 @@ async function saveLH(owner, id, st) {
    ===================================================================== */
 let editClient = null, clientLH = null;
 PAGES.clients = () => {
-  $('view').innerHTML = `<div class="pagehead"><div><h1>Clients</h1><p class="sub">Company master — shared by the whole team. Used on the company letterhead, resolutions and annual filing.</p></div><button id="c-add">+ Add Client</button></div>
+  $('view').innerHTML = `<div class="pagehead"><div><h1>Clients</h1><p class="sub">Company master — shared by the whole team. Used on the company letterhead, resolutions and annual filing.</p></div><div class="row"><a class="btn ghostlink" href="/api/import/template">⬇ Excel template</a><button class="gold" id="c-import">⬆ Import from Excel</button><input type="file" id="c-importfile" accept=".xlsx" class="hidden"><button id="c-add">+ Add Client</button></div></div>
+  <div class="card hidden" id="c-importbox"><h2>Import clients from Excel</h2><p class="hint">Download the template, fill one company per row, then upload it here. Existing clients are matched by CIN.</p>
+   <div class="row"><select id="c-importmode" style="max-width:340px"><option value="skip">Skip clients whose CIN already exists</option><option value="update">Update existing clients with the Excel data</option></select><button id="c-importgo">Choose file &amp; import</button><button class="ghost" id="c-importclose">Close</button></div><div id="c-importres" style="margin-top:12px"></div></div>
   <div class="card hidden" id="c-editor"><h2 id="c-title">Add Client</h2><div class="grid">
    <div class="span2"><label>Company Name <span class="req">*</span></label><input data-c="name" placeholder="As per Certificate of Incorporation"></div>
    <div><label>CIN <span class="req">*</span></label><input data-c="cin" maxlength="21" style="text-transform:uppercase"></div>
    <div><label>Date of Incorporation</label><input type="date" data-c="incDate"></div>
-   <div><label>Company Type</label><select data-c="type"><option value="private">Private Limited</option><option value="public">Public Limited (unlisted)</option><option value="opc">One Person Company</option></select></div>
+   <div><label>Company Type</label><select data-c="type"><option value="private">Private Limited</option><option value="public">Public Limited (unlisted)</option><option value="opc">One Person Company</option><option value="llp">LLP (Limited Liability Partnership)</option></select></div>
+   <div><label>Small company?</label><select data-c="size"><option value="small">Yes — small company / OPC</option><option value="other">No</option></select><div class="hint">Paid-up ≤ Rs. 4 crore and turnover ≤ Rs. 40 crore — verify current limits</div></div>
    <div><label>PAN</label><input data-c="pan" maxlength="10" style="text-transform:uppercase"></div>
+   <div><label>Last AGM number</label><input type="number" min="1" data-c="lastAgmNo" placeholder="For AGM numbering"></div><div><label>Last AGM date</label><input type="date" data-c="lastAgmDate"></div>
    <div class="span3"><label>Registered Office Address <span class="req">*</span></label><textarea data-c="addr"></textarea></div>
    <div><label>Email</label><input type="email" data-c="email"></div><div><label>Phone</label><input data-c="phone"></div><div><label>Website</label><input data-c="web" placeholder="Used for the annual return web link"></div>
    ${logoField('c-logo')}${lhField('c-lh', 'company letterhead')}</div>
@@ -469,6 +573,23 @@ PAGES.clients = () => {
    <div class="row" style="margin-top:18px"><button id="c-save">Save Client</button><button class="ghost" id="c-cancel">Cancel</button></div></div>
   <div class="card"><div class="row between" style="margin-bottom:10px"><b id="c-count"></b><input class="search" id="c-search" placeholder="Search name or CIN…"></div><div id="c-list"></div></div>`;
   $('c-add').onclick = () => openClient(null);
+  $('c-import').onclick = () => { $('c-importbox').classList.remove('hidden'); $('c-importres').innerHTML = ''; };
+  $('c-importclose').onclick = () => $('c-importbox').classList.add('hidden');
+  $('c-importgo').onclick = () => $('c-importfile').click();
+  $('c-importfile').onchange = e => {
+    const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+    if (!/\.xlsx$/i.test(file.name)) return toast('Please choose an Excel .xlsx file (use the template).', true);
+    const r = new FileReader();
+    r.onload = async () => {
+      $('c-importres').innerHTML = '<div class="note">Importing…</div>';
+      try {
+        const out = await api('POST', '/api/import', { data: String(r.result).split(',')[1], mode: $('c-importmode').value });
+        await loadMasters(); listClients();
+        $('c-importres').innerHTML = '<div class="note" style="background:var(--green-l);border-color:#c5e8cf;color:var(--green-d)">✓ ' + out.created + ' added · ' + out.updated + ' updated · ' + out.skipped + ' skipped</div>' + (out.errors.length ? '<div class="note red"><b>Rows not imported:</b><br>' + out.errors.map(esc).join('<br>') + '</div>' : '');
+      } catch (err) { $('c-importres').innerHTML = '<div class="note red">' + esc(err.message) + '</div>'; }
+    };
+    r.readAsDataURL(file);
+  };
   $('c-cancel').onclick = () => $('c-editor').classList.add('hidden');
   $('c-adddir').onclick = () => addDirRow({});
   $('c-addsh').onclick = () => addShRow({});

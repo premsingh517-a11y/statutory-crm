@@ -44,7 +44,7 @@
   const amt = x => (x === undefined || x === null || String(x).trim() === '') ? '–' : String(x).trim();
   const fyLabel = end => { const y = yr(end); return y ? (y - 1) + '-' + String(y).slice(2) : BL; };
 
-  const CASES = ['first', 'agm', 'casual', 'dirapp', 'dirres', 'annual'];
+  const CASES = ['first', 'agm', 'casual', 'dirapp', 'dirres', 'annual', 'allot', 'authcap', 'transfer', 'regoffice', 'inc20a', 'dpt3', 'msme1', 'stk2', 'llp', 'registers'];
   const CASE_TITLE = {
     first: 'First Auditor — Board Appointment u/s 139(6)',
     agm: 'Auditor Appointment at Annual General Meeting u/s 139(1)',
@@ -52,8 +52,19 @@
     dirapp: 'Appointment of Director — Sec 152 / 161(1)',
     dirres: 'Resignation of Director — Sec 168',
     annual: 'Annual Filing — AOC-4 and MGT-7 / MGT-7A',
+    allot: 'Rights Issue & Allotment of Shares — Sec 62(1)(a), PAS-3',
+    authcap: 'Increase in Authorised Capital — Sec 61, SH-7',
+    transfer: 'Transfer of Shares — Sec 56, SH-4',
+    regoffice: 'Shifting of Registered Office — Sec 12, INC-22',
+    inc20a: 'Commencement of Business — Sec 10A, INC-20A',
+    dpt3: 'Return of Deposits / Exempted Receipts — DPT-3',
+    msme1: 'Outstanding Dues to Micro & Small Enterprises — MSME-1',
+    stk2: 'Strike Off (Removal of Name) — Sec 248(2), STK-2',
+    llp: 'LLP Annual Filing — Form 11 & Form 8',
+    registers: 'Statutory Registers — MGT-1 & Register of Directors',
   };
-  const CASE_SHORT = { first: 'First Auditor', agm: 'Auditor at AGM', casual: 'Auditor Casual Vacancy', dirapp: 'Director Appointment', dirres: 'Director Resignation', annual: 'AOC-4 & MGT-7' };
+  const CASE_SHORT = { first: 'First Auditor', agm: 'Auditor at AGM', casual: 'Auditor Casual Vacancy', dirapp: 'Director Appointment', dirres: 'Director Resignation', annual: 'AOC-4 & MGT-7',
+    allot: 'Allotment PAS-3', authcap: 'Auth. Capital SH-7', transfer: 'Share Transfer SH-4', regoffice: 'Regd. Office INC-22', inc20a: 'INC-20A', dpt3: 'DPT-3', msme1: 'MSME-1', stk2: 'Strike Off STK-2', llp: 'LLP Form 11 & 8', registers: 'Registers' };
   const LH_CO = 'company', LH_CA = 'ca', LH_NONE = 'none', LH_PLAIN = 'plain';
 
   /* ---------- context ---------- */
@@ -146,17 +157,19 @@
     'Members / proxies are requested to bring the attendance slip duly filled in for attending the meeting.',
     'All documents referred to in the Notice are open for inspection by the members at the Registered Office of the Company on all working days during business hours up to the date of the meeting.',
     'The Proxy Form (Form MGT-11), Attendance Slip and Route Map to the venue of the meeting are annexed to this Notice.'];
-  function bmNoticeDoc(x, agenda) {
-    const { c, f } = x;
-    return { id: 'bmnotice', title: 'Notice of Board Meeting', sub: 'Sec 173(3) & Secretarial Standard-1 (ICSI)', lh: LH_CO, build: () => [
-      { p: 'Date: ' + ld(f.bmNotice), al: 'r' }, { p: 'To,', after: 0 }, { p: 'All the Directors of ' + c.name, after: 0 },
+  // Notice of Board meeting. pre = field prefix: 'bm' → bmDate, bmTime, bmVenue, bmNotice
+  function bmNoticeDoc(x, agenda, pre, id, title) {
+    const { c, f } = x; pre = pre || 'bm';
+    const D = f[pre + 'Date'], T = f[pre + 'Time'], V = f[pre + 'Venue'], N = f[pre + 'Notice'];
+    return { id: id || 'bmnotice', title: title || 'Notice of Board Meeting', sub: 'Sec 173(3) & Secretarial Standard-1 (ICSI)', lh: LH_CO, build: () => [
+      { p: 'Date: ' + ld(N), al: 'r' }, { p: 'To,', after: 0 }, { p: 'All the Directors of ' + c.name, after: 0 },
       ...(c.directors || []).map(d => ({ p: d.name + (d.din ? ' (DIN: ' + d.din + ')' : ''), after: 0 })), { gap: 1 },
       { p: 'NOTICE OF MEETING OF THE BOARD OF DIRECTORS', b: true, al: 'c', u: true },
-      { p: 'Notice is hereby given that a Meeting of the Board of Directors of ' + c.name + ' will be held on ' + dayName(f.bmDate) + ', ' + ld(f.bmDate) + ' at ' + tm(f.bmTime) + ' at ' + oneLine(x.venue(f.bmVenue)) + ', to transact the following business:', al: 'j' },
+      { p: 'Notice is hereby given that a Meeting of the Board of Directors of ' + c.name + ' will be held on ' + dayName(D) + ', ' + ld(D) + ' at ' + tm(T) + ' at ' + oneLine(x.venue(V)) + ', to transact the following business:', al: 'j' },
       { p: 'AGENDA', b: true, al: 'c' }, ...numbered(agenda),
       { p: 'Directors desirous of participating in the meeting through video conferencing or other audio-visual means, as permitted under Section 173(2) of the Companies Act, 2013, are requested to inform the Company in advance. The draft resolutions and the papers relating to the agenda items are available at the Registered Office for inspection.', al: 'j' },
       { p: 'You are requested to make it convenient to attend the meeting.' },
-      ...sigCompany(x, f.bmNotice, 'By Order of the Board\nFor ' + c.name)] };
+      ...sigCompany(x, N, 'By Order of the Board\nFor ' + c.name)] };
   }
   function gmNoticeBody(x, kind, md, mt, mv) { // opening line of AGM / EGM notice
     const label = kind === 'agm' ? ord(x.f.agmNo) + ' Annual General Meeting' : 'Extraordinary General Meeting';
@@ -713,20 +726,487 @@
   }
 
   /* =====================================================================
+     SHARED HELPERS FOR THE CASES BELOW
+     ===================================================================== */
+  const num = s => parseFloat(String(s == null ? '' : s).replace(/[,\s₹]|Rs\.?/gi, '')) || 0;
+  const inr = n => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  function words(n) { // Indian numbering: crore / lakh / thousand
+    n = Math.floor(Math.abs(n)); if (!n) return 'Zero';
+    const two = k => k < 20 ? ONES[k] : TENS[Math.floor(k / 10)] + (k % 10 ? ' ' + ONES[k % 10] : '');
+    const three = k => (k >= 100 ? ONES[Math.floor(k / 100)] + ' Hundred' + (k % 100 ? ' ' : '') : '') + (k % 100 ? two(k % 100) : '');
+    const parts = [], cr = Math.floor(n / 1e7), lk = Math.floor(n / 1e5) % 100, th = Math.floor(n / 1e3) % 100, rest = n % 1000;
+    if (cr) parts.push((cr >= 1000 ? words(cr) : three(cr)) + ' Crore'); if (lk) parts.push(two(lk) + ' Lakh'); if (th) parts.push(two(th) + ' Thousand'); if (rest) parts.push(three(rest));
+    return parts.join(' ');
+  }
+  const rupees = n => 'Rs. ' + inr(n) + '/- (Rupees ' + words(n) + ' Only)';
+  const sharesW = n => inr(n) + ' (' + words(n) + ')';
+  const totalShares = c => (c.shareholders || []).reduce((s, h) => s + num(h.shares), 0);
+  const stmtNote = (t) => ({ p: t, sz: 18 });
+  const WORKPAPER = 'Internal working paper. Verify all particulars against the live MCA V3 form fields at the time of filing.';
+  const sheetHead = (title, x) => [{ p: title, b: true, al: 'c', sz: 28 }, { p: x.c.name + ' (' + (x.c.type === 'llp' ? 'LLPIN' : 'CIN') + ': ' + v(x.c.cin) + ')', al: 'c' }];
+  const coTable = x => ({ tbl: [[x.c.type === 'llp' ? 'LLPIN' : 'CIN', v(x.c.cin)], ['Name', x.c.name], ['Registered office', oneLine(x.c.addr)], ['Email ID', v(x.c.email)]] });
+  const ctcBoard = (x, pre, res, single) => {
+    const f = x.f, D = f[(pre || 'bm') + 'Date'], T = f[(pre || 'bm') + 'Time'], V = f[(pre || 'bm') + 'Venue'];
+    return [ctcHead(x, (single ? 'RESOLUTION' : 'RESOLUTIONS') + ' PASSED AT THE MEETING OF THE BOARD OF DIRECTORS', D, T, x.venue(V)), { gap: 1 },
+      ...res.map(b => Object.assign({ al: 'j' }, b)), { p: 'Certified True Copy', b: true }, ...sigCompany(x, D)];
+  };
+  const egmDocs = (x, item, resText, explanatory, kind) => { // EGM notice (special/ordinary business) + CTC
+    const f = x.f, c = x.c, RT = kind === 'special' ? 'Special Resolution' : 'Ordinary Resolution';
+    return [{ id: 'egmnotice', title: 'Notice of Extraordinary General Meeting', sub: 'Sec 100, 101, 102 & SS-2 — with explanatory statement', lh: LH_CO, build: () => [
+      ...gmNoticeBody(x, 'egm', f.egmDate, f.egmTime, x.venue(f.egmVenue)),
+      { p: 'SPECIAL BUSINESS:', b: true, u: true }, { p: '1.\t**' + item + '**', hang: true },
+      { p: 'To consider and, if thought fit, to pass the following resolution as a **' + RT + '**:', ind: 567, al: 'j' },
+      ...resText.map(indent),
+      ...sigCompany(x, f.egmNotice, 'By Order of the Board\nFor ' + c.name), { gap: 1 }, { p: 'NOTES:', b: true, u: true },
+      ...numbered(['An Explanatory Statement pursuant to Section 102(1) of the Companies Act, 2013, setting out the material facts concerning the business under Item No. 1, is annexed hereto.', ...GM_NOTES]),
+      { pb: true }, { p: 'EXPLANATORY STATEMENT PURSUANT TO SECTION 102(1) OF THE COMPANIES ACT, 2013', b: true, al: 'c' }, { p: 'Item No. 1', b: true, u: true },
+      ...explanatory.map(t => ({ p: t, al: 'j' })),
+      { p: 'The Board recommends the ' + RT + ' set out at Item No. 1 of the Notice for approval of the members.', al: 'j' },
+      { p: 'None of the Directors or Key Managerial Personnel of the Company or their relatives is, in any way, concerned or interested, financially or otherwise, in the resolution set out at Item No. 1 of the Notice, except to the extent of their shareholding, if any.', al: 'j' },
+      ...sigCompany(x, f.egmNotice, 'By Order of the Board\nFor ' + c.name)] },
+    { id: 'egmctc', title: 'Certified True Copy of Members’ ' + RT, sub: 'Passed at EGM', lh: LH_CO, build: () => [
+      ctcHead(x, RT.toUpperCase() + ' PASSED BY THE MEMBERS AT THE EXTRAORDINARY GENERAL MEETING', f.egmDate, f.egmTime, x.venue(f.egmVenue)), { gap: 1 },
+      { p: '**' + item.toUpperCase() + '**', u: true }, ...resText.map(b => Object.assign({}, b, { al: 'j' })), { p: 'Certified True Copy', b: true }, ...sigCompany(x, f.egmDate)] }];
+  };
+  const dematNote = x => x.c.size === 'other' && x.c.type === 'private'
+    ? 'Rule 9B of the Companies (Prospectus and Allotment of Securities) Rules, 2014: a private company that is not a small company must issue and transfer securities only in dematerialised form (ISIN through a depository). Check applicability before issuing physical certificates.' : '';
+
+  /* =====================================================================
+     RIGHTS ISSUE & ALLOTMENT — PAS-3 (allot)
+     ===================================================================== */
+  function allotRows(x) { return cells(x.f.allottees, 6).map(r => ({ name: r[0], folio: r[1], shares: num(r[2]), amount: r[3] ? num(r[3]) : num(r[2]) * x.price, date: parseDMY(r[4]), mode: r[5] || 'Bank transfer' })); }
+  function allotDocs(x) {
+    const { c, f } = x, D = [], fv = num(c.faceValue) || 10, prem = num(f.premium), price = fv + prem; x.price = price;
+    const offer = num(f.offerShares), held = totalShares(c), rows = allotRows(x), allotted = rows.reduce((s, r) => s + r.shares, 0);
+    const desc = sharesW(offer) + ' equity shares of Rs. ' + inr(fv) + '/- each at a price of Rs. ' + inr(price) + '/- per share' + (prem ? ' (including a premium of Rs. ' + inr(prem) + '/- per share)' : ' (at par)');
+    const ratio = f.ratio || (held && offer ? 'in proportion to their existing shareholding' : BL);
+    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To consider and approve the offer of ' + desc + ' to the existing equity shareholders on a rights basis under Section 62(1)(a) of the Companies Act, 2013.', 'To approve the draft Letter of Offer and authorise a Director to dispatch it to the shareholders.', 'Any other business with the permission of the Chairperson.']));
+    D.push({ id: 'offerctc', title: 'Certified True Copy of Board Resolution — Rights Offer', sub: 'Sec 62(1)(a)', lh: LH_CO, build: () => ctcBoard(x, 'bm', [
+      { p: '**OFFER OF EQUITY SHARES ON RIGHTS BASIS TO THE EXISTING SHAREHOLDERS**', u: true },
+      { p: '“**RESOLVED THAT** pursuant to the provisions of Section 62(1)(a) and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Share Capital and Debentures) Rules, 2014 ' + STAT + ' and the Articles of Association of the Company, the consent of the Board be and is hereby accorded to offer ' + desc + ', aggregating to ' + rupees(offer * price) + ', to the persons who, on the date of the offer, are holders of equity shares of the Company, ' + ratio + ', by way of a Letter of Offer.' },
+      { p: '**RESOLVED FURTHER THAT** the offer shall be made by a notice specifying the number of shares offered and shall remain open for a period of ' + (f.offerDays || '15') + ' days from the date of the offer, i.e. from ' + ld(f.offerDate) + ' to ' + ld(f.lastDate) + ', within which the offer, if not accepted, shall be deemed to have been declined' + (num(f.offerDays) && num(f.offerDays) < 15 ? ', the shorter period being with the consent of not less than ninety per cent of the members' : '') + '.' },
+      { p: '**RESOLVED FURTHER THAT** the offer shall include a right exercisable by the shareholders to renounce the shares offered to them, or any of them, in favour of any other person, and that the Board may dispose of the shares not taken up in such manner as it thinks most beneficial to the Company and not dis-advantageous to the shareholders.' },
+      { p: '**RESOLVED FURTHER THAT** ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and dispatch the Letter of Offer to the shareholders and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }]) });
+    D.push({ id: 'offerletter', title: 'Letter of Offer with Acceptance / Renunciation Form', sub: 'One page set per shareholder from the client master', lh: LH_CO, build: () => {
+      const list = (c.shareholders || []).filter(h => h.name).length ? c.shareholders.filter(h => h.name) : [{ name: '', folio: '', shares: '' }];
+      const out = [];
+      list.forEach((h, i) => {
+        const ent = held && offer ? Math.floor(num(h.shares) * offer / held) : 0;
+        if (i) out.push({ pb: true });
+        out.push({ p: 'Date: ' + ld(f.offerDate), al: 'r' }, { p: 'To,', after: 0 }, { p: v(h.name), b: true, after: 0 }, { p: 'Folio No.: ' + v(h.folio), after: 0 }, { gap: 1 },
+          subj('Letter of Offer — rights issue of equity shares under Section 62(1)(a) of the Companies Act, 2013'), { p: 'Dear Shareholder,' },
+          { p: 'The Board of Directors of ' + c.name + ' at its meeting held on ' + ld(f.bmDate) + ' has decided to offer ' + desc + ' to the existing equity shareholders ' + ratio + '.', al: 'j' },
+          { tbl: [['Your present holding (equity shares)', h.shares ? inr(num(h.shares)) : BL], ['Shares offered to you (entitlement)', ent ? inr(ent) : BL], ['Issue price per share', 'Rs. ' + inr(price) + (prem ? ' (face value Rs. ' + inr(fv) + ' + premium Rs. ' + inr(prem) + ')' : '')], ['Amount payable', ent ? rupees(ent * price) : BL], ['Offer opens on', ld(f.offerDate)], ['Last date for acceptance', ld(f.lastDate)]] },
+          { p: 'If you wish to accept the offer, please sign Part A of the enclosed form and send it to the Registered Office along with the payment on or before ' + ld(f.lastDate) + ' by bank transfer to the Company’s account' + (f.bank ? ' (' + f.bank + ')' : '') + '. You may also renounce the shares offered to you, in whole or in part, in favour of any other person by signing Part B. If the offer is not accepted by the last date, it shall be deemed to have been declined.', al: 'j' },
+          ...sigCompany(x, f.offerDate, 'For ' + c.name),
+          { pb: true }, { p: 'FORM OF ACCEPTANCE / RENUNCIATION', b: true, al: 'c', u: true }, { p: 'Rights issue of equity shares of ' + c.name + ' — Letter of Offer dated ' + ld(f.offerDate), al: 'c' },
+          { p: 'PART A — ACCEPTANCE', b: true },
+          { p: 'I / We, ' + v(h.name) + ' (Folio No. ' + v(h.folio) + '), accept ________ equity shares offered to me / us and enclose / have remitted Rs. ____________ towards the full amount payable. I / We agree to accept the shares subject to the Memorandum and Articles of Association of the Company.', al: 'j' },
+          { gap: 1 }, { p: 'Signature: ____________________     Date: ____________', after: 0 },
+          { gap: 1 }, { p: 'PART B — RENUNCIATION (to be filled only if renouncing)', b: true },
+          { p: 'I / We hereby renounce ________ equity shares offered to me / us in favour of the person named below.', al: 'j' },
+          { tbl: [['Name of the renouncee', ''], ['Address', ''], ['PAN', ''], ['Signature of the shareholder (renouncer)', ''], ['Signature of the renouncee (accepting the shares)', '']] });
+      });
+      return out;
+    } });
+    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To take note of the acceptances received against the Letter of Offer dated ' + ld(f.offerDate) + '.', 'To allot equity shares to the shareholders / renouncees who have accepted the offer and paid the application money.', 'To authorise the issue of share certificates and the filing of e-Form PAS-3.', 'Any other business with the permission of the Chairperson.'], 'al', 'alnotice', 'Notice of Board Meeting for Allotment'));
+    D.push({ id: 'allotctc', title: 'Certified True Copy of Board Resolution — Allotment', sub: 'Sec 62(1)(a) & 39 — attachment to PAS-3', lh: LH_CO, build: () => ctcBoard(x, 'al', [
+      { p: '**ALLOTMENT OF ' + inr(allotted).toUpperCase() + ' EQUITY SHARES ON RIGHTS BASIS**', u: true },
+      { p: '“**RESOLVED THAT** pursuant to the provisions of Sections 39 and 62(1)(a) and other applicable provisions, if any, of the Companies Act, 2013 read with the rules made thereunder ' + STAT + ', and in terms of the Letter of Offer dated ' + ld(f.offerDate) + ', the Board hereby allots ' + sharesW(allotted) + ' fully paid-up equity shares of Rs. ' + inr(fv) + '/- each at a price of Rs. ' + inr(price) + '/- per share to the following persons, the full application money having been received in the bank account of the Company:' },
+      { tbl: [['S. No.', 'Name of the allottee', 'Folio No.', 'No. of equity shares', 'Amount received (Rs.)'], ...rows.map((r, i) => [String(i + 1), r.name, r.folio || '—', inr(r.shares), inr(r.amount)]), ['', '**Total**', '', '**' + inr(allotted) + '**', '**' + inr(rows.reduce((s, r) => s + r.amount, 0)) + '**']], cols: [8, 40, 12, 18, 22], head: true },
+      { p: '**RESOLVED FURTHER THAT** the said equity shares shall rank pari passu in all respects with the existing equity shares of the Company; that the names of the allottees be entered in the Register of Members; and that share certificates' + (dematNote(x) ? ' / credit to the demat accounts' : '') + ' be issued within two months from the date of allotment in terms of Section 56(4)(a) of the Act, signed by two Directors of the Company.' },
+      { p: '**RESOLVED FURTHER THAT** any Director of the Company be and is hereby severally authorised to file the return of allotment in e-Form PAS-3 with the Registrar of Companies within thirty days of allotment under Section 39(4) of the Act and to do all such acts, deeds and things as may be necessary.”' }]) });
+    if (!dematNote(x)) D.push({ id: 'sh1', title: 'Share Certificates — Form SH-1', sub: 'One per allottee — signed by two Directors', lh: LH_PLAIN, build: () => {
+      let no = num(f.certFrom) || 1, dn = num(f.distFrom) || (held + 1); const out = [];
+      rows.forEach((r, i) => {
+        if (i) out.push({ pb: true });
+        out.push(...formHead('Form No. SH-1', 'SHARE CERTIFICATE', 'Pursuant to sub-section (3) of Section 46 of the Companies Act, 2013 and Rule 5(2) of the Companies (Share Capital and Debentures) Rules, 2014'),
+          { p: c.name.toUpperCase(), b: true, al: 'c', sz: 30, after: 0 }, { p: 'CIN: ' + v(c.cin), al: 'c', after: 0 }, { p: 'Registered Office: ' + oneLine(c.addr), al: 'c' },
+          { p: 'This is to certify that the person(s) named in this certificate is / are the registered holder(s) of the within-mentioned share(s) bearing the distinctive number(s) herein specified in the above-named Company, subject to the Memorandum and Articles of Association of the Company, and that the amount endorsed herein has been paid up on each such share.', al: 'j' },
+          { tbl: [['Certificate No.', String(no)], ['Folio No.', v(r.folio)], ['Name of the holder', v(r.name)], ['Kind / class of shares', 'Equity shares of Rs. ' + inr(fv) + '/- each'], ['Amount paid-up per share', 'Rs. ' + inr(fv) + '/-'], ['Number of shares', sharesW(r.shares)], ['Distinctive numbers', 'From ' + inr(dn) + ' to ' + inr(dn + r.shares - 1)]] },
+          { p: 'Given under the authority of the Board of Directors on ' + ld(f.alDate) + (f.place ? ' at ' + f.place : '') + '.', al: 'j' },
+          { gap: 1 }, ...signRow(x, [x.d, x.d2.name ? x.d2 : {}]),
+          stmtNote('Note: No transfer of the share(s) comprised in this certificate can be registered unless accompanied by this certificate. Stamp duty on the certificate is payable as per the applicable State Stamp Act.'));
+        no++; dn += r.shares;
+      });
+      return out.length ? out : [{ p: 'Enter the allottees to generate share certificates.' }];
+    } });
+    D.push({ id: 'pas3', title: 'e-Form PAS-3 Data Sheet & Checklist', sub: 'Internal — return of allotment', lh: LH_NONE, build: () => [
+      ...sheetHead('e-FORM PAS-3 — RETURN OF ALLOTMENT — DATA SHEET & CHECKLIST', x), head('A. Company'), coTable(x),
+      head('B. Allotment'), { tbl: [['Date of allotment (Board meeting)', sd(f.alDate)], ['Type of issue', 'Rights issue — Section 62(1)(a)'], ['Consideration', 'Cash'], ['Number of equity shares allotted', inr(allotted)], ['Nominal value / premium per share (Rs.)', inr(fv) + ' / ' + inr(prem)], ['Total consideration (Rs.)', inr(rows.reduce((s, r) => s + r.amount, 0))], ['Paid-up capital before allotment (Rs.)', v(c.paidCap)], ['Paid-up capital after allotment (Rs.)', inr(num(c.paidCap) + allotted * fv)], ['Authorised capital (Rs.)', v(c.authCap)]] },
+      head('C. Due dates'), { tbl: [['e-Form PAS-3 to be filed by', '**' + sd(addDays(f.alDate, 30)) + '** (within 30 days of allotment — Sec 39(4) & Rule 12)'], ['Share certificates to be issued by', sd(addMonths(f.alDate, 2)) + ' (within two months — Sec 56(4)(a))']] },
+      head('D. Attachments'), ...numbered(['Certified true copy of the Board resolution for allotment', 'List of allottees (name, address, PAN, number of shares, amount)', 'Copy of the Letter of Offer (optional)']),
+      head('E. Before filing'), ...numbered(['Check that authorised capital is enough for the new paid-up capital; if not, increase it first (SH-7).', 'Confirm that the application money was received in the Company’s bank account from the allottees’ own accounts.', 'Update the Register of Members (MGT-1) and pay stamp duty on share certificates as per the State Stamp Act.', ...(dematNote(x) ? [dematNote(x)] : []), 'Rights issue does not need Form PAS-4 / special resolution; a private placement under Section 42 does — not covered by this set.']),
+      stmtNote(WORKPAPER)] });
+    return D;
+  }
+  function signRow(x, ds) { // two signatures one after another for certificates
+    const out = [];
+    ds.forEach((d, i) => { if (i) out.push({ gap: 1 }); out.push({ sign: d.sign || null }, { p: (d.name || BL) + ' — Director', b: true, after: 0, keep: true }, { p: 'DIN: ' + v(d.din), after: 0, keep: true }); });
+    return out;
+  }
+
+  /* =====================================================================
+     INCREASE IN AUTHORISED CAPITAL — SH-7 (authcap)
+     ===================================================================== */
+  function authCapDocs(x) {
+    const { c, f } = x, fv = num(c.faceValue) || 10, oldC = num(f.oldCap || c.authCap), newC = num(f.newCap), special = f.resType === 'special';
+    const clause = 'V. The Authorised Share Capital of the Company is ' + rupees(newC) + ' divided into ' + sharesW(newC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- (Rupees ' + words(fv) + ' Only) each.';
+    const res = [{ p: '“**RESOLVED THAT** pursuant to the provisions of Sections 13, 61(1)(a) and 64 and other applicable provisions, if any, of the Companies Act, 2013 read with the rules made thereunder ' + STAT + ', the Authorised Share Capital of the Company be and is hereby increased from ' + rupees(oldC) + ' divided into ' + sharesW(oldC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- each to ' + rupees(newC) + ' divided into ' + sharesW(newC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- each, by the creation of ' + sharesW((newC - oldC) / fv) + ' new Equity Shares of Rs. ' + inr(fv) + '/- each ranking pari passu with the existing Equity Shares of the Company.' },
+      { p: '**RESOLVED FURTHER THAT** the existing Clause V of the Memorandum of Association of the Company be and is hereby substituted by the following clause:' }, { p: clause, ind: 567, b: true },
+      { p: '**RESOLVED FURTHER THAT** the Board of Directors of the Company be and is hereby authorised to file e-Form SH-7' + (special ? ' and e-Form MGT-14' : '') + ' with the Registrar of Companies and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }];
+    const D = [];
+    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To consider and recommend to the members the increase in the Authorised Share Capital of the Company from ' + rupees(oldC) + ' to ' + rupees(newC) + ' and the consequent alteration of Clause V of the Memorandum of Association.', 'To approve the Notice of the Extraordinary General Meeting and fix the date, time and venue thereof.', 'Any other business with the permission of the Chairperson.']));
+    D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolution', sub: 'Recommending increase & convening EGM', lh: LH_CO, build: () => ctcBoard(x, 'bm', [
+      { p: '**1. RECOMMENDATION FOR INCREASE IN AUTHORISED SHARE CAPITAL**', u: true },
+      { p: '“**RESOLVED THAT** the Board hereby recommends to the members of the Company the increase in the Authorised Share Capital of the Company from ' + rupees(oldC) + ' to ' + rupees(newC) + ' and the consequent alteration of Clause V of the Memorandum of Association, by way of an ' + (special ? 'special' : 'ordinary') + ' resolution under Sections 13 and 61 of the Companies Act, 2013.”' },
+      { p: '**2. CONVENING OF EXTRAORDINARY GENERAL MEETING**', u: true },
+      { p: '“**RESOLVED THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ', and the draft Notice along with the Explanatory Statement under Section 102 of the Act, as placed before the Board, be and is hereby approved; and that ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and issue the Notice.”' }]) });
+    D.push(...egmDocs(x, 'Increase in the Authorised Share Capital and alteration of the Capital Clause of the Memorandum of Association', res,
+      ['The present Authorised Share Capital of the Company is ' + rupees(oldC) + ' divided into ' + sharesW(oldC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- each. To meet the future requirements of funds and to enable the Company to issue further shares, the Board of Directors at its meeting held on ' + ld(f.bmDate) + ' recommended increasing the Authorised Share Capital to ' + rupees(newC) + '.',
+        'The increase requires the alteration of Clause V of the Memorandum of Association and the approval of the members under Sections 13 and 61 of the Companies Act, 2013. A copy of the Memorandum of Association, along with the proposed alteration, is available for inspection at the Registered Office.'], special ? 'special' : 'ordinary'));
+    D.push({ id: 'moa', title: 'Altered Clause V of Memorandum (Capital Clause)', sub: 'Attachment to SH-7 — replace in the MoA print', lh: LH_PLAIN, build: () => [
+      { p: 'MEMORANDUM OF ASSOCIATION OF ' + c.name.toUpperCase(), b: true, al: 'c' }, { p: '(Clause V as altered by the members at the Extraordinary General Meeting held on ' + ld(f.egmDate) + ')', al: 'c' }, { gap: 1 },
+      { p: clause, al: 'j', b: true }, { gap: 1 },
+      { p: 'Certified to be the altered capital clause of the Memorandum of Association of the Company.', al: 'j' }, ...sigCompany(x, f.egmDate)] });
+    D.push({ id: 'sh7', title: 'e-Form SH-7 Data Sheet & Checklist', sub: 'Internal — notice of alteration of share capital', lh: LH_NONE, build: () => [
+      ...sheetHead('e-FORM SH-7 — ALTERATION OF SHARE CAPITAL — DATA SHEET & CHECKLIST', x), head('A. Company'), coTable(x),
+      head('B. Alteration'), { tbl: [['Purpose', 'Increase in authorised share capital — Sec 61(1)(a)'], ['Date of members’ resolution (EGM)', sd(f.egmDate)], ['Type of resolution', special ? 'Special resolution (also file MGT-14)' : 'Ordinary resolution'], ['Existing authorised capital (Rs.)', inr(oldC) + ' (' + inr(oldC / fv) + ' shares of Rs. ' + inr(fv) + ')'], ['Revised authorised capital (Rs.)', inr(newC) + ' (' + inr(newC / fv) + ' shares of Rs. ' + inr(fv) + ')'], ['Increase (Rs.)', inr(newC - oldC)]] },
+      head('C. Due dates'), { tbl: [['e-Form SH-7 to be filed by', '**' + sd(addDays(f.egmDate, 30)) + '** (within 30 days of the resolution — Sec 64(1))'], ...(special ? [['e-Form MGT-14 to be filed by', sd(addDays(f.egmDate, 30)) + ' (Sec 117)']] : [])] },
+      head('D. Attachments'), ...numbered(['Certified true copy of the members’ resolution', 'Altered Memorandum of Association (and Articles, if the capital is mentioned there)', 'Notice of the EGM with explanatory statement']),
+      head('E. Before filing'), ...numbered(['Check whether the Articles of Association require a special resolution for alteration of capital.', 'MCA fee and stamp duty on the increase are calculated in the form as per the Companies (Registration Offices and Fees) Rules, 2014 and the State Stamp Act — keep the amount ready.', 'Update the authorised capital in the client master of this portal after approval.']),
+      stmtNote(WORKPAPER)] });
+    return D;
+  }
+
+  /* =====================================================================
+     TRANSFER OF SHARES — SH-4 (transfer)
+     ===================================================================== */
+  function transferDocs(x) {
+    const { c, f } = x, fv = num(c.faceValue) || 10, h = (c.shareholders || [])[parseInt(f.fromIndex, 10)] || {}, n = num(f.trShares), cons = num(f.consideration);
+    const stamp = Math.ceil(cons * 0.00015);
+    const D = [];
+    D.push({ id: 'sh4', title: 'Form SH-4 — Securities Transfer Form', sub: 'Sec 56 & Rule 11 — signed by transferor, transferee & witness', lh: LH_PLAIN, build: () => [
+      ...formHead('Form No. SH-4', 'Securities Transfer Form', 'Pursuant to Section 56 of the Companies Act, 2013 and sub-rule (1) of Rule 11 of the Companies (Share Capital and Debentures) Rules, 2014'),
+      { p: 'Date of execution: ' + ld(f.execDate), al: 'r' },
+      { p: 'FOR THE CONSIDERATION stated below, the “Transferor(s)” named do hereby transfer to the “Transferee(s)” named the securities specified below, subject to the conditions on which the said securities are now held by the Transferor(s), and the Transferee(s) do hereby agree to accept and hold the said securities subject to the conditions aforesaid.', al: 'j' },
+      { tbl: [['CIN', v(c.cin)], ['Name of the company (in full)', c.name], ['Name of the Stock Exchange where the company is listed, if any', 'Not applicable']] },
+      head('DESCRIPTION OF SECURITIES'),
+      { tbl: [['Kind / class of securities', 'Nominal value of each unit', 'Amount called up per unit', 'Amount paid up per unit'], ['Equity shares', 'Rs. ' + inr(fv), 'Rs. ' + inr(fv), 'Rs. ' + inr(fv)]], head: true },
+      { tbl: [['No. of securities being transferred', inr(n) + ' (' + words(n) + ')'], ['Consideration received (Rs.)', inr(cons) + ' (Rupees ' + words(cons) + ' Only)'], ['Distinctive number', 'From ' + v(f.distFrom) + ' to ' + v(f.distTo)], ['Corresponding certificate no(s).', v(f.certNo)]] },
+      head('TRANSFEROR’S PARTICULARS'), { tbl: [['Registered folio number', v(h.folio)], ['Name(s) in full', v(h.name)], ['Signature(s)', '']] },
+      { p: 'I hereby confirm that the Transferor has signed before me.', after: 0 }, { tbl: [['Signature of the witness', ''], ['Name and address of the witness', '']] },
+      head('TRANSFEREE’S PARTICULARS'), { tbl: [['Name in full', v(f.toName)], ['Father’s / mother’s / spouse’s name', v(f.toFather)], ['Address and e-mail ID', (oneLine(f.toAddr) || BL) + (f.toEmail ? ' — ' + f.toEmail : '')], ['Occupation', v(f.toOcc)], ['PAN', v(f.toPan)], ['Existing folio no., if any', v(f.toFolio)], ['Signature', '']] },
+      { tbl: [['Value of stamp affixed (Rs.)', stamp ? inr(stamp) + ' (0.015% of consideration — Indian Stamp Act, 1899; verify the current rate)' : BL], ['Enclosures', '(1) Share certificate no. ' + v(f.certNo) + '  (2) Copy of PAN of the transferee  (3) Others: ____']] },
+      head('FOR OFFICE USE ONLY'), { tbl: [['Checked by', ''], ['Signature tallied by', ''], ['Entered in the Register of Transfer on ____ vide Transfer No. ____', ''], ['Approval date', sd(f.bmDate)]] }] });
+    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To consider and approve the transfer of ' + inr(n) + ' equity shares from ' + v(h.name) + ' to ' + v(f.toName) + '.', 'Any other business with the permission of the Chairperson.']));
+    D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolution — Transfer', sub: 'Approval & registration of transfer — Sec 56', lh: LH_CO, build: () => ctcBoard(x, 'bm', [
+      { p: '**APPROVAL OF TRANSFER OF EQUITY SHARES**', u: true },
+      { p: '“**RESOLVED THAT** pursuant to the provisions of Section 56 and other applicable provisions, if any, of the Companies Act, 2013 read with Rule 11 of the Companies (Share Capital and Debentures) Rules, 2014 and the Articles of Association of the Company, the transfer of ' + sharesW(n) + ' equity shares of Rs. ' + inr(fv) + '/- each, bearing distinctive numbers ' + v(f.distFrom) + ' to ' + v(f.distTo) + ' comprised in share certificate no. ' + v(f.certNo) + ', from ' + v(h.name) + ' (Folio No. ' + v(h.folio) + ') to ' + v(f.toName) + ', as per the instrument of transfer in Form SH-4 dated ' + ld(f.execDate) + ', duly stamped and executed, be and is hereby approved and registered.' },
+      { p: '**RESOLVED FURTHER THAT** the name of ' + v(f.toName) + ' be entered in the Register of Members in respect of the said shares, and that the share certificate be endorsed in favour of the transferee (or a new certificate be issued) and delivered within one month from the date of receipt of the instrument of transfer, in terms of Section 56(4)(c) of the Act; and that any Director of the Company be and is hereby authorised to sign the endorsement and to do all acts necessary in this regard.”' }], true) });
+    D.push({ id: 'trletter', title: 'Intimation of Registration of Transfer', sub: 'To the transferee, with the endorsed certificate', lh: LH_CO, build: () => [
+      { p: 'Date: ' + ld(f.bmDate), al: 'r' }, { p: 'To,', after: 0 }, { p: v(f.toName), b: true, after: 0 }, ...addrLines(f.toAddr), { gap: 1 },
+      subj('Registration of transfer of ' + inr(n) + ' equity shares of ' + c.name), { p: 'Dear Sir / Madam,' },
+      { p: 'We are pleased to inform you that the Board of Directors at its meeting held on ' + ld(f.bmDate) + ' has approved the transfer of ' + sharesW(n) + ' equity shares of Rs. ' + inr(fv) + '/- each (distinctive numbers ' + v(f.distFrom) + ' to ' + v(f.distTo) + ') from ' + v(h.name) + ' in your favour, and your name has been entered in the Register of Members' + (f.toFolio ? ' under Folio No. ' + f.toFolio : '') + '.', al: 'j' },
+      { p: 'The share certificate no. ' + v(f.certNo) + ', duly endorsed in your favour, is enclosed. Kindly acknowledge receipt.', al: 'j' },
+      ...signoff(), ...sigCompany(x, f.bmDate), { gap: 1 }, { p: 'Encl.: Share certificate no. ' + v(f.certNo) }] });
+    D.push({ id: 'trsheet', title: 'Share Transfer Checklist', sub: 'Internal', lh: LH_NONE, build: () => [
+      ...sheetHead('SHARE TRANSFER — CHECKLIST', x),
+      { tbl: [['Transferor', v(h.name) + ' (Folio ' + v(h.folio) + ', holding ' + (h.shares ? inr(num(h.shares)) : BL) + ' shares)'], ['Transferee', v(f.toName)], ['Shares transferred', inr(n)], ['Consideration (Rs.)', inr(cons)], ['Stamp duty @ 0.015% (Rs.)', stamp ? inr(stamp) : BL], ['Date of execution of SH-4', sd(f.execDate)], ['Lodge with company by', sd(addDays(f.execDate, 60)) + ' (within 60 days of execution — Rule 11(2))'], ['Register & deliver certificate by', sd(addMonths(f.bmDate, 1)) + ' (within one month — Sec 56(4)(c))']] },
+      ...numbered(['Check the Articles of Association for restrictions on transfer (right of first refusal / Board approval) — Sec 2(68).', 'Stamp duty is payable on the instrument; for physical shares it is usually paid through the State e-stamp / stock-holding portal — verify the current procedure.', ...(dematNote(x) ? [dematNote(x)] : []), 'If the price differs from the fair market value, check the income-tax provisions (Sec 50CA / 56(2)(x)) with the client.', 'Update the Register of Members (MGT-1) and the shareholder list in this portal; the change is reported in the next MGT-7 / MGT-7A.', 'No e-form is filed with the ROC for a share transfer.']),
+      stmtNote(WORKPAPER)] });
+    return D;
+  }
+
+  /* =====================================================================
+     SHIFTING OF REGISTERED OFFICE — INC-22 (regoffice)
+     ===================================================================== */
+  function regOfficeDocs(x) {
+    const { c, f } = x, roc = f.scope === 'roc', D = [], newA = oneLine(f.newAddr) || BL;
+    const boardRes = roc
+      ? [{ p: '**1. RECOMMENDATION FOR SHIFTING OF REGISTERED OFFICE OUTSIDE THE LOCAL LIMITS**', u: true },
+        { p: '“**RESOLVED THAT** the Board hereby recommends to the members of the Company, by way of a special resolution under Section 12(5) of the Companies Act, 2013, the shifting of the Registered Office of the Company from ' + oneLine(c.addr) + ' to ' + newA + ', which is outside the local limits of the city / town / village where the Registered Office is presently situated but within the jurisdiction of the same Registrar of Companies.”' },
+        { p: '**2. CONVENING OF EXTRAORDINARY GENERAL MEETING**', u: true },
+        { p: '“**RESOLVED THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ', and the draft Notice along with the Explanatory Statement, as placed before the Board, be and is hereby approved; and that ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and issue the Notice.”' }]
+      : [{ p: '**SHIFTING OF REGISTERED OFFICE WITHIN THE LOCAL LIMITS**', u: true },
+        { p: '“**RESOLVED THAT** pursuant to the provisions of Section 12 and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Incorporation) Rules, 2014 ' + STAT + ', the Registered Office of the Company be and is hereby shifted from ' + oneLine(c.addr) + ' to ' + newA + ', within the local limits of the same city / town / village, with effect from ' + ld(f.effDate) + '.' },
+        { p: '**RESOLVED FURTHER THAT** any Director of the Company be and is hereby severally authorised to file e-Form INC-22 with the Registrar of Companies within thirty days of the change, to paint or affix the name of the Company outside the new office, to update the letterheads and other documents, and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }];
+    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', roc ? 'To consider and recommend to the members the shifting of the Registered Office of the Company to ' + newA + '.' : 'To consider the shifting of the Registered Office of the Company to ' + newA + ' within the local limits.', ...(roc ? ['To approve the Notice of the Extraordinary General Meeting.'] : []), 'To authorise a Director to file e-Form INC-22.', 'Any other business with the permission of the Chairperson.']));
+    D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolution', sub: 'Sec 12' + (roc ? ' — recommending special resolution' : ' — shifting within local limits'), lh: LH_CO, build: () => ctcBoard(x, 'bm', boardRes, !roc) });
+    if (roc) D.push(...egmDocs(x, 'Shifting of the Registered Office of the Company outside the local limits of the city', [
+      { p: '“**RESOLVED THAT** pursuant to the provisions of Section 12(5) and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Incorporation) Rules, 2014 ' + STAT + ', the consent of the members be and is hereby accorded to shift the Registered Office of the Company from ' + oneLine(c.addr) + ' to ' + newA + ', within the jurisdiction of the same Registrar of Companies, with effect from ' + ld(f.effDate) + '.' },
+      { p: '**RESOLVED FURTHER THAT** the Board of Directors be and is hereby authorised to file e-Forms MGT-14 and INC-22 with the Registrar of Companies and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }],
+      ['For operational convenience and better administrative control, the Board of Directors at its meeting held on ' + ld(f.bmDate) + ' recommended shifting the Registered Office of the Company from ' + oneLine(c.addr) + ' to ' + newA + '.', 'As the new premises are outside the local limits of the city / town / village where the Registered Office is presently situated, the approval of the members by way of a special resolution is required under Section 12(5) of the Companies Act, 2013.'], 'special'));
+    D.push({ id: 'noc', title: 'No-Objection Certificate from Owner of Premises', sub: 'Attachment to INC-22 — signed by the owner', lh: LH_PLAIN, build: () => [
+      { p: 'NO OBJECTION CERTIFICATE', b: true, al: 'c', u: true }, { gap: 1 }, { p: 'Date: ' + ld(f.nocDate || f.bmDate), al: 'r' }, ...toBoard(x),
+      { p: 'I / We, ' + v(f.ownerName) + ', ' + (f.ownerRel ? f.ownerRel + ', ' : '') + 'being the owner(s) of the premises situated at ' + newA + ', hereby give my / our no objection to ' + c.name + ' (CIN: ' + v(c.cin) + ') for using the said premises as its Registered Office' + (f.premises === 'rented' ? ' under the rent / lease agreement dated ' + ld(f.leaseDate) : '') + ', and for the purpose of correspondence with all authorities.', al: 'j' },
+      { p: 'I / We have no objection to the Company filing this certificate with the Registrar of Companies and other authorities.', al: 'j' },
+      ...sigPerson({ name: f.ownerName }, f.nocDate || f.bmDate, f.place, ['Address: ' + (oneLine(f.ownerAddr) || BL)])] });
+    D.push({ id: 'inc22', title: 'e-Form INC-22 Data Sheet & Checklist', sub: 'Internal — notice of situation / change of registered office', lh: LH_NONE, build: () => [
+      ...sheetHead('e-FORM INC-22 — CHANGE OF REGISTERED OFFICE — DATA SHEET & CHECKLIST', x), head('A. Company'), coTable(x),
+      head('B. Change'), { tbl: [['Purpose', roc ? 'Change outside local limits, within the same ROC — Sec 12(5)' : 'Change within local limits — Sec 12(4)'], ['Old address', oneLine(c.addr)], ['New address', newA], ['Effective date', sd(f.effDate)], ['Premises', f.premises === 'owned' ? 'Owned by the company' : f.premises === 'director' ? 'Owned by a director / relative' : 'Rented / leased'], ['Date of Board resolution', sd(f.bmDate)], ...(roc ? [['Date of special resolution (EGM)', sd(f.egmDate)]] : [])] },
+      head('C. Due dates'), { tbl: [['e-Form INC-22 to be filed by', '**' + sd(addDays(roc ? f.egmDate : f.effDate, 30)) + '** (within 30 days of the change — Sec 12(4))'], ...(roc ? [['e-Form MGT-14 to be filed by', sd(addDays(f.egmDate, 30)) + ' (Sec 117)']] : [])] },
+      head('D. Attachments'), ...numbered(['Proof of the registered office address: registered conveyance / lease deed / rent agreement (with rent receipts)', 'Proof of evidence of any utility service (telephone, gas, electricity etc.) not older than two months', 'No-objection certificate from the owner', 'Certified true copy of the ' + (roc ? 'special resolution' : 'Board resolution'), 'Other attachments required by the form at the time of filing (e.g. photographs of the office, if asked)']),
+      head('E. After filing'), ...numbered(['Paint or affix the name of the Company and its address outside the new office (Sec 12(3)(a)).', 'Update letterheads, invoices, bank, GST, PAN / TAN and other registrations.', 'Update the address in this portal’s client master (option “Update client master”).', 'Shifting to another State or to another ROC within the State needs Regional Director approval (INC-23) — not covered by this set.']),
+      stmtNote(WORKPAPER)] });
+    return D;
+  }
+
+  /* =====================================================================
+     COMMENCEMENT OF BUSINESS — INC-20A (inc20a)
+     ===================================================================== */
+  function inc20aDocs(x) {
+    const { c, f } = x, D = [];
+    const subs = cells(f.subscribers, 5).length ? cells(f.subscribers, 5) : (c.shareholders || []).filter(h => h.name).map(h => [h.name, h.shares, String(num(h.shares) * (num(c.faceValue) || 10)), '', '']);
+    const tbl = { tbl: [['S. No.', 'Name of the subscriber', 'No. of shares', 'Amount paid (Rs.)', 'Date of payment', 'Mode / bank reference'], ...subs.map((r, i) => [String(i + 1), r[0], r[1] ? inr(num(r[1])) : '—', r[2] ? inr(num(r[2])) : '—', r[3] || '—', r[4] || '—'])], cols: [7, 30, 13, 16, 14, 20], head: true };
+    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To take note of the receipt of subscription money from all the subscribers to the Memorandum of Association.', 'To authorise a Director to file the declaration for commencement of business in e-Form INC-20A.', 'Any other business with the permission of the Chairperson.']));
+    D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolution', sub: 'Sec 10A — subscription money & INC-20A', lh: LH_CO, build: () => ctcBoard(x, 'bm', [
+      { p: '**DECLARATION FOR COMMENCEMENT OF BUSINESS**', u: true },
+      { p: '“**RESOLVED THAT** the Board hereby takes note and confirms that every subscriber to the Memorandum of Association of the Company has paid the value of the shares agreed to be taken by him / her, the details of which are as follows:' }, tbl,
+      { p: '**RESOLVED FURTHER THAT** pursuant to Section 10A(1)(a) of the Companies Act, 2013 read with Rule 23A of the Companies (Incorporation) Rules, 2014, ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and file the declaration for commencement of business in e-Form INC-20A with the Registrar of Companies within one hundred and eighty days of incorporation, along with the proof of payment of subscription money, and to do all such acts, deeds and things as may be necessary.”' }], true) });
+    D.push({ id: 'decl', title: 'Declaration by Director — Commencement of Business', sub: 'Content of e-Form INC-20A — signed by the director', lh: LH_CO, build: () => [
+      { p: 'DECLARATION FOR COMMENCEMENT OF BUSINESS', b: true, al: 'c', u: true }, { p: '[Pursuant to Section 10A(1)(a) of the Companies Act, 2013 and Rule 23A of the Companies (Incorporation) Rules, 2014]', al: 'c', sz: 20 }, { gap: 1 },
+      { p: 'I, ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + ') of ' + c.name + ' (CIN: ' + v(c.cin) + '), incorporated on ' + ld(c.incDate) + ', do hereby declare that every subscriber to the Memorandum of Association of the Company has paid the value of the shares agreed to be taken by him / her, as under:', al: 'j' }, tbl,
+      { p: 'The subscription money has been received in the bank account of the Company' + (f.bank ? ' maintained with ' + f.bank : '') + '. The proof of payment is attached.', al: 'j' },
+      ...sigCompany(x, f.declDate || f.bmDate)] });
+    D.push({ id: 'inc20a', title: 'e-Form INC-20A Data Sheet & Checklist', sub: 'Internal', lh: LH_NONE, build: () => [
+      ...sheetHead('e-FORM INC-20A — COMMENCEMENT OF BUSINESS — DATA SHEET & CHECKLIST', x), head('A. Company'), coTable(x),
+      { tbl: [['Date of incorporation', sd(c.incDate)], ['Paid-up capital (Rs.)', v(c.paidCap)], ['Bank account', v(f.bank)]] },
+      head('B. Due date'), { tbl: [['e-Form INC-20A to be filed by', '**' + sd(addDays(c.incDate, 180)) + '** (within 180 days of incorporation — Sec 10A(1))'], ['Penalty for default', 'Company Rs. 50,000; every officer in default Rs. 1,000 per day, up to Rs. 1,00,000 (Sec 10A(2)) — verify current amounts']] },
+      head('C. Attachments'), ...numbered(['Proof of payment of subscription money by each subscriber (bank statement / receipts)', 'Certified true copy of the Board resolution (optional)']),
+      head('D. Before filing'), ...numbered(['Applies to companies incorporated after 2 November 2018 having share capital.', 'Registered office verification (INC-22) should also be complete if not done at incorporation.', 'Professional certification / DSC as required by the form at the time of filing.']),
+      stmtNote(WORKPAPER)] });
+    return D;
+  }
+
+  /* =====================================================================
+     RETURN OF DEPOSITS — DPT-3 (dpt3)
+     ===================================================================== */
+  function dpt3Docs(x) {
+    const { c, f } = x, rows = cells(f.dptRows, 4), D = [];
+    const dirLoans = rows.filter(r => /director|relative/i.test(r[0]));
+    const tbl = { tbl: [['S. No.', 'Category (Rule 2(1)(c) of the Companies (Acceptance of Deposits) Rules, 2014)', 'Name of the party', 'Received during the year (Rs.)', 'Outstanding as on ' + sd(f.fyEnd) + ' (Rs.)'], ...(rows.length ? rows.map((r, i) => [String(i + 1), r[0], r[1], r[2] ? inr(num(r[2])) : '—', r[3] ? inr(num(r[3])) : '—']) : [['1', 'NIL', '', '', '']]), ['', '**Total**', '', '**' + inr(rows.reduce((s, r) => s + num(r[2]), 0)) + '**', '**' + inr(rows.reduce((s, r) => s + num(r[3]), 0)) + '**']], cols: [7, 33, 24, 18, 18], head: true };
+    dirLoans.forEach((r, i) => {
+      const d = (c.directors || []).find(dd => dd.name && r[1] && dd.name.toLowerCase() === r[1].toLowerCase()) || { name: r[1] };
+      D.push({ id: 'decl' + i, title: 'Declaration by Lender — ' + (r[1] || 'Director'), sub: 'Rule 2(1)(c)(viii) — not out of borrowed funds', lh: LH_PLAIN, build: () => [
+        { p: 'DECLARATION', b: true, al: 'c', u: true }, { p: '[Pursuant to Rule 2(1)(c)(viii) of the Companies (Acceptance of Deposits) Rules, 2014]', al: 'c', sz: 20 }, { gap: 1 }, ...toBoard(x),
+        { p: 'I, ' + v(r[1]) + ', ' + (/relative/i.test(r[0]) ? 'a relative of a Director' : 'a Director') + ' of ' + c.name + ', hereby declare that the amount of Rs. ' + (r[3] ? inr(num(r[3])) : BL) + ' outstanding as on ' + ld(f.fyEnd) + ', given by me to the Company by way of loan, is not out of funds acquired by me by borrowing or accepting loans or deposits from others.', al: 'j' },
+        ...sigPerson({ name: r[1], din: d.din, sign: d.sign }, f.declDate || f.fyEnd, f.place)] });
+    });
+    D.push({ id: 'stmt', title: 'Statement of Outstanding Receipts (not deposits)', sub: 'Rule 16A(3) — company letterhead', lh: LH_CO, build: () => [
+      { p: 'STATEMENT OF OUTSTANDING RECEIPT OF MONEY OR LOAN NOT CONSIDERED AS DEPOSITS AS ON ' + ld(f.fyEnd).toUpperCase(), b: true, al: 'c' },
+      { p: '[Pursuant to Rule 16A(3) of the Companies (Acceptance of Deposits) Rules, 2014]', al: 'c', sz: 20 },
+      { p: 'The Company has not accepted any deposits within the meaning of Section 73 of the Companies Act, 2013. The particulars of money or loans received by the Company that are not considered as deposits in terms of Rule 2(1)(c), outstanding as on ' + ld(f.fyEnd) + ', are as follows:', al: 'j' }, tbl,
+      ...sigCompany(x, f.declDate || f.fyEnd)] });
+    if (f.audCert === 'yes') D.push({ id: 'audcert', title: 'Auditor’s Certificate for DPT-3', sub: 'From the statutory auditor — CA letterhead', lh: LH_CA, build: () => [
+      { p: 'TO WHOMSOEVER IT MAY CONCERN', b: true, al: 'c', u: true }, { p: 'AUDITOR’S CERTIFICATE', b: true, al: 'c' },
+      { p: 'We, ' + x.firmDesc + ', the Statutory Auditors of ' + c.name + ' (CIN: ' + v(c.cin) + '), have examined the books of account and other relevant records of the Company for the purpose of certifying the particulars of outstanding receipts of money or loans as on ' + ld(f.fyEnd) + ' for e-Form DPT-3.', al: 'j' },
+      { p: 'Based on our examination and the information and explanations given to us, we certify that the Company has not accepted any deposits within the meaning of Section 73 of the Companies Act, 2013 and that the particulars of money or loans received and not considered as deposits under Rule 2(1)(c) of the Companies (Acceptance of Deposits) Rules, 2014, outstanding as on ' + ld(f.fyEnd) + ', are as under:', al: 'j' }, tbl,
+      { p: 'This certificate is issued at the request of the Company for filing e-Form DPT-3 with the Registrar of Companies and should not be used for any other purpose.', al: 'j' },
+      ...sigCA(x, f.declDate || f.fyEnd)] });
+    D.push({ id: 'dpt3', title: 'e-Form DPT-3 Data Sheet & Checklist', sub: 'Internal — annual return of deposits / exempted receipts', lh: LH_NONE, build: () => [
+      ...sheetHead('e-FORM DPT-3 — DATA SHEET & CHECKLIST — FY ' + fyLabel(f.fyEnd), x), head('A. Company'), coTable(x),
+      { tbl: [['Paid-up capital (Rs.)', v(c.paidCap)], ['Net worth as on ' + sd(f.fyEnd) + ' (Rs.)', v(f.netWorth)], ['Type of return', 'Particulars of transactions not considered as deposits (Rule 16A(3))']] },
+      head('B. Outstanding receipts'), tbl,
+      head('C. Due date'), { tbl: [['e-Form DPT-3 to be filed by', '**' + (yr(f.fyEnd) ? '30/06/' + yr(f.fyEnd) : BL) + '** (on or before 30 June — Rule 16 / 16A)']] },
+      head('D. Attachments'), ...numbered(['Auditor’s certificate (mandatory for return of deposits; attach for exempted receipts if required by the form)', 'List of lenders / particulars, if required', 'Declarations from directors / relatives for loans under Rule 2(1)(c)(viii) — keep on record']),
+      head('E. Before filing'), ...numbered(['Figures must match the audited balance sheet as on ' + sd(f.fyEnd) + '.', 'Loans from directors’ relatives are exempt only for private companies (Rule 2(1)(c)(viii)).', 'Advances for supply of goods / services not adjusted within 365 days become deposits — check ageing.']),
+      stmtNote(WORKPAPER)] });
+    return D;
+  }
+
+  /* =====================================================================
+     MSME-1 — DUES TO MICRO & SMALL ENTERPRISES (msme1)
+     ===================================================================== */
+  function msmeDocs(x) {
+    const { c, f } = x, rows = cells(f.msmeRows, 6), y = num(f.msmeYear) || yr(addDays(new Date().toISOString().slice(0, 10), 0));
+    const h1 = f.half !== 'h2', from = h1 ? (y - 1) + '-04-01' : (y - 1) + '-10-01', to = h1 ? (y - 1) + '-09-30' : y + '-03-31', due = h1 ? (y - 1) + '-10-31' : y + '-04-30';
+    const tbl = { tbl: [['S. No.', 'Name of the supplier', 'PAN', 'Udyam Reg. No.', 'Amount due (Rs.)', 'Due since', 'Reason for delay'], ...(rows.length ? rows.map((r, i) => [String(i + 1), r[0], r[1] || '—', r[2] || '—', r[3] ? inr(num(r[3])) : '—', r[4] || '—', r[5] || '—']) : [['1', 'NIL', '', '', '', '', '']]), ['', '**Total**', '', '', '**' + inr(rows.reduce((s, r) => s + num(r[3]), 0)) + '**', '', '']], cols: [6, 22, 12, 16, 13, 12, 19], head: true };
+    return [{ id: 'msmestmt', title: 'Statement of Outstanding Dues to MSE Suppliers', sub: 'Half year ' + sd(from) + ' to ' + sd(to), lh: LH_CO, build: () => [
+      { p: 'STATEMENT OF OUTSTANDING PAYMENTS TO MICRO AND SMALL ENTERPRISE SUPPLIERS', b: true, al: 'c' }, { p: 'For the half year from ' + ld(from) + ' to ' + ld(to), al: 'c' },
+      { p: 'Pursuant to Section 405 of the Companies Act, 2013 read with the Specified Companies (Furnishing of information about payment to micro and small enterprise suppliers) Order, 2019, the details of amounts due to micro and small enterprise suppliers which remained unpaid for more than forty-five days from the date of acceptance or deemed acceptance of the goods or services (Section 9 of the MSMED Act, 2006) are as follows:', al: 'j' }, tbl,
+      ...sigCompany(x, f.declDate || to)] },
+    { id: 'msme1', title: 'e-Form MSME-1 Data Sheet & Checklist', sub: 'Internal — half-yearly return', lh: LH_NONE, build: () => [
+      ...sheetHead('e-FORM MSME-1 — DATA SHEET & CHECKLIST', x), head('A. Company'), coTable(x),
+      { tbl: [['Period', sd(from) + ' to ' + sd(to)], ['Total amount outstanding (Rs.)', inr(rows.reduce((s, r) => s + num(r[3]), 0))], ['Number of suppliers', String(rows.length)]] },
+      head('B. Due date'), { tbl: [['e-Form MSME-1 to be filed by', '**' + sd(due) + '** (' + (h1 ? '31 October for April–September' : '30 April for October–March') + ')']] },
+      head('C. Checklist'), ...numbered(['File only if any amount due to a micro / small enterprise supplier is outstanding for more than 45 days; otherwise no filing is required.', 'Verify each supplier’s Udyam registration and whether it is a micro or small (not medium) enterprise.', 'Interest under Section 16 of the MSMED Act is payable on delayed payments; disclose in the financial statements.', 'Income-tax: unpaid MSE dues beyond the agreed period are disallowed under Section 43B(h) — inform the client.']),
+      stmtNote(WORKPAPER)] }];
+  }
+
+  /* =====================================================================
+     STRIKE OFF — STK-2 (stk2)
+     ===================================================================== */
+  function stk2Docs(x) {
+    const { c, f } = x, D = [], dirs = (c.directors || []).filter(d => d.name);
+    const ground = f.ground === 'nocomm' ? 'has not commenced its business since its incorporation' : 'has not been carrying on any business or operation for a period of two immediately preceding financial years and has not made any application within such period for obtaining the status of a dormant company under Section 455';
+    const special = [{ p: '“**RESOLVED THAT** pursuant to the provisions of Section 248(2) and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Removal of Names of Companies from the Register of Companies) Rules, 2016 ' + STAT + ', and since the Company ' + ground + ', and has extinguished all its liabilities, the consent of the members be and is hereby accorded to make an application to the Registrar of Companies for removing the name of the Company from the Register of Companies.' },
+      { p: '**RESOLVED FURTHER THAT** the Board of Directors of the Company be and is hereby authorised to file e-Form STK-2 along with the indemnity bonds (STK-3), affidavits (STK-4), statement of accounts and other documents, and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }];
+    D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To consider the proposal for removal of the name of the Company from the Register of Companies under Section 248(2) of the Companies Act, 2013.', 'To approve the statement of accounts as on ' + ld(f.accDate) + '.', 'To approve the Notice of the Extraordinary General Meeting.', 'Any other business with the permission of the Chairperson.']));
+    D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolution', sub: 'Proposal for strike off — Sec 248(2)', lh: LH_CO, build: () => ctcBoard(x, 'bm', [
+      { p: '**1. PROPOSAL FOR REMOVAL OF NAME OF THE COMPANY FROM THE REGISTER OF COMPANIES**', u: true },
+      { p: '“**RESOLVED THAT** the Company ' + ground + ' and has no assets or liabilities as per the statement of accounts as on ' + ld(f.accDate) + ', which is hereby approved; and the Board hereby recommends to the members that an application be made to the Registrar of Companies under Section 248(2) of the Companies Act, 2013 for removing the name of the Company from the Register of Companies.' },
+      { p: '**RESOLVED FURTHER THAT** every Director of the Company be and is hereby authorised to execute the indemnity bond in Form STK-3 and the affidavit in Form STK-4, and that ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and file e-Form STK-2.”' },
+      { p: '**2. CONVENING OF EXTRAORDINARY GENERAL MEETING**', u: true },
+      { p: '“**RESOLVED THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ', and the draft Notice along with the Explanatory Statement, as placed before the Board, be and is hereby approved.”' }]) });
+    D.push(...egmDocs(x, 'Removal of the name of the Company from the Register of Companies under Section 248(2)', special,
+      ['The Company ' + ground + '. The Company has no assets and has extinguished all its liabilities. The Board of Directors at its meeting held on ' + ld(f.bmDate) + ' decided to apply to the Registrar of Companies for the removal of the name of the Company from the Register of Companies under Section 248(2) of the Companies Act, 2013.', 'Such an application requires a special resolution of the members, or the consent of seventy-five per cent of the members in terms of paid-up share capital.'], 'special'));
+    D.push({ id: 'stk3', title: 'Form STK-3 — Indemnity Bonds (one per director)', sub: 'Rule 4(3)(i) — on stamp paper, notarised', lh: LH_PLAIN, build: () => {
+      const out = [];
+      (dirs.length ? dirs : [{}]).forEach((d, i) => {
+        if (i) out.push({ pb: true });
+        out.push(...formHead('FORM STK-3', 'Indemnity Bond', 'Pursuant to Section 248(2) of the Companies Act, 2013 and Rule 4(3)(i) of the Companies (Removal of Names of Companies from the Register of Companies) Rules, 2016'),
+          { p: '(To be given individually by every director, on non-judicial stamp paper of the value prescribed under the State Stamp Act, and notarised)', al: 'c', sz: 18 },
+          { p: 'KNOW ALL MEN BY THESE PRESENTS that I, ' + v(d.name) + ' (DIN: ' + v(d.din) + '), son / daughter of ____________, resident of ____________________, a Director of ' + c.name + ' (CIN: ' + v(c.cin) + '), do hereby indemnify the Registrar of Companies, the Central Government and any person who may suffer any loss or damage arising out of the striking off of the name of the Company from the Register of Companies.', al: 'j' },
+          { p: 'I undertake to pay and discharge all liabilities and obligations of the Company, if any, which may come to notice after the name of the Company has been struck off, and to indemnify any person for any loss that may arise pursuant to the removal of the name of the Company from the Register of Companies.', al: 'j' },
+          { p: 'IN WITNESS WHEREOF I have signed this Indemnity Bond on ' + ld(f.bondDate || f.egmDate) + ' at ' + v(f.place) + '.', al: 'j' },
+          ...sigPerson({ name: d.name, din: d.din, sign: d.sign }, f.bondDate || f.egmDate, f.place),
+          { gap: 1 }, { tbl: [['Witness 1 — name, address & signature', ''], ['Witness 2 — name, address & signature', '']] });
+      });
+      return out;
+    } });
+    D.push({ id: 'stk4', title: 'Form STK-4 — Affidavits (one per director)', sub: 'Rule 4(3)(ii) — on stamp paper, notarised', lh: LH_PLAIN, build: () => {
+      const out = [];
+      (dirs.length ? dirs : [{}]).forEach((d, i) => {
+        if (i) out.push({ pb: true });
+        out.push(...formHead('FORM STK-4', 'Affidavit', 'Pursuant to Section 248(2) of the Companies Act, 2013 and Rule 4(3)(ii) of the Companies (Removal of Names of Companies from the Register of Companies) Rules, 2016'),
+          { p: '(To be given by every director individually, on non-judicial stamp paper, and notarised)', al: 'c', sz: 18 },
+          { p: 'I, ' + v(d.name) + ' (DIN: ' + v(d.din) + '), son / daughter of ____________, resident of ____________________, Director of ' + c.name + ' (CIN: ' + v(c.cin) + '), do solemnly affirm and declare that:', al: 'j' },
+          ...lettered(['the Company ' + ground + ';', 'the Company has no assets and liabilities as on the date of the application;', 'the Company has not, within the last three months, changed its name or shifted its registered office from one State to another, made a disposal for value of property or rights held by it immediately before cessation of trading, or engaged in any other activity except as required for making the application (Section 249(1));', 'no inquiry, inspection, investigation or prosecution is pending against the Company, and the Company is not the subject of an application for compromise or arrangement or of winding-up proceedings;', 'the Company is not a listed company, is not a Section 8 company, and is not a company covered under Rule 3 of the said Rules which cannot apply for removal of its name; and', 'the contents of the application and the documents attached are true and correct.']),
+          { p: 'DEPONENT', b: true, al: 'r' }, ...sigPerson({ name: d.name, din: d.din, sign: d.sign }, f.bondDate || f.egmDate, f.place),
+          { p: 'VERIFICATION', b: true }, { p: 'Verified at ' + v(f.place) + ' on ' + ld(f.bondDate || f.egmDate) + ' that the contents of the above affidavit are true and correct to the best of my knowledge and belief and nothing material has been concealed therefrom.', al: 'j' }, { gap: 1 }, { p: 'DEPONENT', b: true, al: 'r' });
+      });
+      return out;
+    } });
+    D.push({ id: 'stk8', title: 'Statement of Accounts (assets & liabilities) — CA certified', sub: 'Rule 4(3)(iii) — not older than 30 days', lh: LH_CA, build: () => {
+      const items = cells(f.stkItems, 2);
+      return [{ p: 'STATEMENT OF ACCOUNTS OF ' + c.name.toUpperCase() + ' AS ON ' + ld(f.accDate).toUpperCase(), b: true, al: 'c' }, { p: '(CIN: ' + v(c.cin) + ')', al: 'c' },
+        { tbl: [['Particulars', 'Amount (Rs.)'], ...(items.length ? items.map(r => [r[0], r[1] ? inr(num(r[1])) : 'Nil']) : [['Assets', 'Nil'], ['Liabilities', 'Nil'], ['Paid-up share capital', v(c.paidCap)], ['Accumulated profit / (loss)', BL]])], head: true },
+        { p: 'We have examined the books of account and other records of the Company and certify that the above statement of accounts as on ' + ld(f.accDate) + ' is true and correct, and that the Company has no assets and liabilities as on that date.', al: 'j' },
+        ...sigCA(x, f.accDate), { gap: 1 }, { p: 'Approved by the Board of Directors', b: true }, ...sigCompany(x, f.accDate)];
+    } });
+    D.push({ id: 'stk2', title: 'e-Form STK-2 Data Sheet & Checklist', sub: 'Internal — application for removal of name', lh: LH_NONE, build: () => [
+      ...sheetHead('e-FORM STK-2 — STRIKE OFF — DATA SHEET & CHECKLIST', x), head('A. Company'), coTable(x),
+      { tbl: [['Ground', f.ground === 'nocomm' ? 'Not commenced business since incorporation' : 'No business / operation for two immediately preceding financial years'], ['Date of Board meeting', sd(f.bmDate)], ['Date of special resolution (EGM)', sd(f.egmDate)], ['Statement of accounts as on', sd(f.accDate) + ' (must be within 30 days of filing)'], ['Bank account closed on', sd(f.bankClosed)]] },
+      head('B. Attachments to STK-2'), ...numbered(['Indemnity bond in Form STK-3 from every director (notarised, on stamp paper)', 'Affidavit in Form STK-4 from every director (notarised, on stamp paper)', 'Statement of accounts certified by a Chartered Accountant (not older than 30 days)', 'Certified true copy of the special resolution (or consent of 75% members by paid-up capital)', 'Statement regarding pending litigations, if any', 'Bank account closure certificate / bank statement']),
+      head('C. Before filing'), ...numbered(['All overdue e-Forms AOC-4 and MGT-7 / 7A up to the end of the financial year in which the company ceased business must be filed first.', 'File MGT-14 for the special resolution within 30 days (Sec 117).', 'Cancel GST registration and close the bank account; settle all statutory dues.', 'No pending charge (CHG-4 for satisfaction filed); DIR-3 KYC of directors active.', 'Fee for STK-2 as prescribed (currently Rs. 10,000 — verify).']),
+      stmtNote(WORKPAPER)] });
+    return D;
+  }
+
+  /* =====================================================================
+     LLP ANNUAL FILING — FORM 8 & FORM 11 (llp)
+     ===================================================================== */
+  function llpDocs(x) {
+    const { c, f } = x, D = [];
+    const parts = cells(f.partners, 4).length ? cells(f.partners, 4) : (c.directors || []).filter(d => d.name).map(d => [d.name, d.din, 'Yes', '']);
+    const totC = parts.reduce((s, r) => s + num(r[3]), 0), y = yr(f.fyEnd);
+    const dps = parts.filter(r => !/^n/i.test(r[2]));
+    const ptbl = { tbl: [['S. No.', 'Name of partner', 'DPIN / DIN / PAN', 'Designated partner', 'Contribution (Rs.)'], ...parts.map((r, i) => [String(i + 1), r[0], r[1] || '—', /^n/i.test(r[2]) ? 'No' : 'Yes', r[3] ? inr(num(r[3])) : '—']), ['', '**Total**', '', '', '**' + inr(totC) + '**']], cols: [7, 35, 20, 16, 22], head: true };
+    const audit = num(f.turnover) > 4000000 || totC > 2500000;
+    D.push({ id: 'llpres', title: 'Resolution of Partners — Approval of Accounts & Annual Return', sub: 'Rule 24 & 25 of LLP Rules, 2009', lh: LH_CO, build: () => [
+      { p: 'CERTIFIED TRUE COPY OF THE RESOLUTION PASSED BY THE PARTNERS OF ' + c.name.toUpperCase() + ' (LLPIN: ' + v(c.cin) + ') ON ' + ld(f.approveDate).toUpperCase() + ' AT ' + oneLine(c.addr).toUpperCase(), b: true, al: 'j' }, { gap: 1 },
+      { p: '“**RESOLVED THAT** the Statement of Account and Solvency of the Limited Liability Partnership for the financial year ended ' + ld(f.fyEnd) + ', comprising the Statement of Assets and Liabilities as at that date and the Statement of Income and Expenditure for the year ended on that date' + (audit ? ', together with the Auditors’ Report thereon' : '') + ', as placed before the partners, be and is hereby approved, and that the designated partners be and are hereby authorised to sign the same in terms of Rule 24 of the Limited Liability Partnership Rules, 2009.', al: 'j' },
+      { p: '**RESOLVED FURTHER THAT** the designated partners be and are hereby severally authorised to file Form 11 (Annual Return) and Form 8 (Statement of Account & Solvency) with the Registrar of Companies within the prescribed time, and to do all such acts, deeds and things as may be necessary in this regard.”', al: 'j' },
+      { p: 'Certified True Copy', b: true }, { gap: 1 }, { p: 'For ' + c.name, b: true }, ...signRow(x, [x.d, x.d2.name ? x.d2 : {}]), { p: 'Designated Partners', after: 0 }, { p: 'Place: ' + v(f.place), after: 0 }, { p: 'Date: ' + ld(f.approveDate) }] });
+    D.push({ id: 'solvency', title: 'Statement of Solvency (Form 8 — Part A)', sub: 'Signed by two designated partners', lh: LH_CO, build: () => [
+      { p: 'STATEMENT OF SOLVENCY', b: true, al: 'c', u: true }, { p: '[Pursuant to Section 34 of the Limited Liability Partnership Act, 2008 and Rule 24 of the LLP Rules, 2009]', al: 'c', sz: 20 }, { gap: 1 },
+      { p: 'The designated partners of ' + c.name + ' (LLPIN: ' + v(c.cin) + ') hereby state that, for the financial year ended ' + ld(f.fyEnd) + ':', al: 'j' },
+      ...lettered([f.solvent === 'no' ? 'the Limited Liability Partnership is NOT able to meet its liabilities (both contingent and otherwise) in full as they become due in the normal course of business;' : 'the Limited Liability Partnership is able to meet its liabilities (both contingent and otherwise) in full as they become due in the normal course of business;',
+        'the Statement of Account and Solvency has been prepared in accordance with the books of account maintained under Section 34 of the Act and gives a true and fair view of the state of affairs of the Limited Liability Partnership;', 'the turnover of the Limited Liability Partnership for the year was Rs. ' + (f.turnover ? inr(num(f.turnover)) : BL) + ' and the total contribution of the partners was Rs. ' + inr(totC) + '.']),
+      { gap: 1 }, { p: 'For ' + c.name, b: true }, ...signRow(x, [x.d, x.d2.name ? x.d2 : {}]), { p: 'Designated Partners', after: 0 }, { p: 'Place: ' + v(f.place), after: 0 }, { p: 'Date: ' + ld(f.approveDate) }] });
+    D.push({ id: 'llpsheet', title: 'Form 11 & Form 8 Data Sheet & Checklist', sub: 'Internal — LLP annual filing', lh: LH_NONE, build: () => [
+      ...sheetHead('LLP FORM 11 & FORM 8 — DATA SHEET & CHECKLIST — FY ' + fyLabel(f.fyEnd), x), head('A. LLP'), coTable(x),
+      head('B. Partners and contribution (Form 11)'), ptbl,
+      { tbl: [['Number of partners / designated partners', parts.length + ' / ' + dps.length], ['Changes in partners during the year', f.partnerChanges || 'None'], ['Turnover (Rs.)', f.turnover ? inr(num(f.turnover)) : BL], ['Total contribution (Rs.)', inr(totC)], ['Audit of accounts required?', audit ? 'Yes — turnover > Rs. 40 lakh or contribution > Rs. 25 lakh (Rule 24(8))' : 'No (turnover ≤ Rs. 40 lakh and contribution ≤ Rs. 25 lakh)']] },
+      head('C. Due dates'), { tbl: [['Form 11 (Annual Return)', '**' + (y ? '30/05/' + y : BL) + '** (within 60 days of the end of the financial year — Rule 25)'], ['Form 8 (Statement of Account & Solvency)', '**' + (y ? '30/10/' + y : BL) + '** (within 30 days from the end of six months of the financial year — Rule 24)']] },
+      head('D. Checklist'), ...numbered(['Form 11 needs certification by a Company Secretary in practice if total contribution exceeds Rs. 50 lakh or turnover exceeds Rs. 5 crore.', 'Form 8 is signed by two designated partners and certified as required by the form (CA / CS / CMA in practice); attach the auditors’ report if audit is required.', 'Check DIR-3 KYC of all designated partners and the DSC of the signing partners.', 'Additional fee applies at Rs. 100 per day of delay for each form — verify current rules.']),
+      stmtNote(WORKPAPER)] });
+    return D;
+  }
+
+  /* =====================================================================
+     STATUTORY REGISTERS (registers)
+     ===================================================================== */
+  function registerDocs(x) {
+    const { c, f } = x, fv = num(c.faceValue) || 10;
+    let dn = 1;
+    const mem = (c.shareholders || []).filter(h => h.name).map((h, i) => { const n = num(h.shares), r = [String(i + 1), h.folio || '', h.name, '', '', '', h.cat || '', '', inr(n), n ? inr(dn) + ' – ' + inr(dn + n - 1) : '', inr(n * fv), '', '']; dn += n; return r; });
+    return [{ id: 'mgt1', title: 'Register of Members — Form MGT-1', sub: 'Sec 88 & Rule 3 — pre-filled from client master', lh: LH_NONE, landscape: true, build: () => [
+      ...formHead('Form No. MGT-1', 'Register of Members', 'Pursuant to Section 88(1)(a) of the Companies Act, 2013 and Rule 3(1) of the Companies (Management and Administration) Rules, 2014'),
+      { p: c.name + ' (CIN: ' + v(c.cin) + ') — Equity shares of Rs. ' + inr(fv) + '/- each — as on ' + ld(f.asOn || new Date().toISOString().slice(0, 10)), al: 'c', b: true },
+      { tbl: [['S. No.', 'Folio No.', 'Name of the member', 'Address / e-mail', 'PAN / CIN', 'Father’s / spouse’s name', 'Category / status', 'Date of becoming member', 'No. of shares', 'Distinctive nos.', 'Amount paid (Rs.)', 'Date of cessation', 'Remarks'], ...(mem.length ? mem : [['1', '', '', '', '', '', '', '', '', '', '', '', '']])], cols: [4, 5, 12, 14, 8, 10, 7, 8, 7, 9, 7, 6, 7], head: true },
+      stmtNote('Columns not available in the portal are left blank — complete them from the company records. Keep the register at the registered office (Sec 94).')] },
+    { id: 'regdir', title: 'Register of Directors and KMP', sub: 'Sec 170 & Rule 17 — pre-filled from client master', lh: LH_NONE, landscape: true, build: () => [
+      { p: 'REGISTER OF DIRECTORS AND KEY MANAGERIAL PERSONNEL AND THEIR SHAREHOLDING', b: true, al: 'c' }, { p: '[Pursuant to Section 170(1) of the Companies Act, 2013 and Rule 17 of the Companies (Appointment and Qualification of Directors) Rules, 2014]', al: 'c', sz: 20 },
+      { p: c.name + ' (CIN: ' + v(c.cin) + ')', al: 'c', b: true },
+      { tbl: [['S. No.', 'DIN / PAN', 'Full name', 'Father’s / spouse’s name', 'Residential address', 'Date of birth', 'Nationality', 'Occupation', 'Designation', 'Date of appointment', 'Date of cessation', 'Shares held', 'Remarks'],
+        ...(c.directors || []).map((d, i) => { const h = (c.shareholders || []).find(s => s.name && d.name && s.name.toLowerCase() === d.name.toLowerCase()); return [String(i + 1), d.din || '', d.name, '', '', '', 'Indian', '', d.desig || 'Director', '', '', h ? inr(num(h.shares)) : '', '']; }),
+        ...(c.csName ? [[String((c.directors || []).length + 1), '', c.csName, '', '', '', 'Indian', '', 'Company Secretary (' + (c.csMno || '') + ')', '', '', '', '']] : [])], cols: [4, 8, 11, 10, 14, 7, 6, 7, 8, 7, 6, 6, 6], head: true },
+      stmtNote('Columns not available in the portal are left blank — complete them from DIR-2 / DIR-12 records.')] }];
+  }
+
+  /* =====================================================================
+     SMART DEFAULTS — dates and AGM number (applied only to empty / auto-filled fields)
+     ===================================================================== */
+  function lastFYEnd(today) { const t = today || new Date().toISOString().slice(0, 10); const s = fyStart(t); return s + '-03-31'; }
+  function agmNumber(c, fyEnd) {
+    const fy = yr(fyEnd); if (!fy) return '';
+    if (c.lastAgmNo && c.lastAgmDate) { const lastFy = fyStart(c.lastAgmDate); const n = parseInt(c.lastAgmNo, 10) + (fy - lastFy); return n > 0 ? String(n) : ''; }
+    if (c.incDate) { const first = yr(firstFYEnd(c.incDate)); const n = fy - first + 1; return n > 0 ? String(n) : ''; }
+    return '';
+  }
+  function defaults(ctx, auto) {
+    const x = prep(ctx), c = x.c, f = Object.assign({}, x.f), out = {}; auto = auto || {};
+    const set = (k, val) => { if (!val) return; if (!f[k] || f[k] === auto[k]) { f[k] = val; out[k] = val; } };
+    const agmBlock = () => {
+      set('fyEnd', lastFYEnd());
+      set('agmNo', agmNumber(c, f.fyEnd));
+      const due = addMonths(f.fyEnd, (c.incDate && firstFYEnd(c.incDate) === f.fyEnd) ? 9 : 6), sep30 = yr(f.fyEnd) + '-09-30';
+      set('agmDate', due && due < sep30 ? due : sep30);
+      set('agmNotice', addDays(f.agmDate, -22));
+      set('bmDate', addDays(f.agmNotice, -2));
+      set('bmNotice', addDays(f.bmDate, -8));
+    };
+    const egm = (base) => { set('egmNotice', addDays(base, 1)); set('egmDate', addDays(f.egmNotice, 22)); };
+    switch (x.kase) {
+      case 'first': set('bmDate', addDays(f.incDate || c.incDate, 25)); set('bmNotice', addDays(f.bmDate, -8)); set('consentDate', addDays(f.bmDate, -3)); break;
+      case 'agm': agmBlock(); set('consentDate', addDays(f.bmDate, -3)); break;
+      case 'casual': set('bmDate', addDays(f.vacDate, 20)); set('bmNotice', addDays(f.bmDate, -8)); set('consentDate', addDays(f.bmDate, -3)); if (f.reason !== 'other') egm(f.bmDate); break;
+      case 'annual': agmBlock(); set('coSize', c.size === 'other' ? 'other' : 'small'); break;
+      case 'dirapp': set('bmNotice', addDays(f.bmDate, -8)); set('consentDate', addDays(f.bmDate, -1)); egm(f.bmDate); break;
+      case 'dirres': set('resReceipt', f.resLetter); set('bmDate', addDays(f.resReceipt, 8)); set('bmNotice', f.resReceipt); break;
+      case 'allot': set('bmNotice', addDays(f.bmDate, -8)); set('offerDate', addDays(f.bmDate, 1)); set('offerDays', '15'); set('lastDate', addDays(f.offerDate, num(f.offerDays) || 15)); set('alDate', addDays(f.lastDate, 2)); set('alTime', '11:00'); set('alNotice', addDays(f.alDate, -8)); break;
+      case 'authcap': set('oldCap', c.authCap); set('bmNotice', addDays(f.bmDate, -8)); egm(f.bmDate); break;
+      case 'transfer': set('bmDate', addDays(f.execDate, 7)); set('bmNotice', addDays(f.bmDate, -8)); break;
+      case 'regoffice': set('bmNotice', addDays(f.bmDate, -8)); if (f.scope === 'roc') { egm(f.bmDate); set('effDate', addDays(f.egmDate, 1)); } else set('effDate', f.bmDate); break;
+      case 'inc20a': set('bmDate', addDays(c.incDate, 150)); set('bmNotice', addDays(f.bmDate, -8)); break;
+      case 'dpt3': set('fyEnd', lastFYEnd()); set('declDate', yr(f.fyEnd) ? yr(f.fyEnd) + '-06-15' : ''); break;
+      case 'msme1': { const t = new Date().toISOString().slice(0, 10), m = +t.slice(5, 7); set('half', m >= 10 || m <= 3 ? 'h1' : 'h2'); set('msmeYear', String(m >= 4 ? +t.slice(0, 4) + (m >= 10 ? 1 : 0) : +t.slice(0, 4))); break; }
+      case 'stk2': set('bmNotice', addDays(f.bmDate, -8)); set('accDate', f.bmDate); egm(f.bmDate); set('bondDate', f.egmDate); break;
+      case 'llp': set('fyEnd', lastFYEnd()); set('approveDate', yr(f.fyEnd) ? yr(f.fyEnd) + '-05-15' : ''); break;
+    }
+    return out;
+  }
+
+  /* =====================================================================
      DISPATCH
      ===================================================================== */
   function docDefs(ctx) {
     const x = prep(ctx), K = x.kase;
-    const D = K === 'dirapp' ? dirAppDocs(x) : K === 'dirres' ? dirResDocs(x) : K === 'annual' ? annualDocs(x) : ['first', 'agm', 'casual'].includes(K) ? auditorDocs(x) : [];
+    const MAP = { dirapp: dirAppDocs, dirres: dirResDocs, annual: annualDocs, allot: allotDocs, authcap: authCapDocs, transfer: transferDocs, regoffice: regOfficeDocs, inc20a: inc20aDocs, dpt3: dpt3Docs, msme1: msmeDocs, stk2: stk2Docs, llp: llpDocs, registers: registerDocs };
+    const D = MAP[K] ? MAP[K](x) : ['first', 'agm', 'casual'].includes(K) ? auditorDocs(x) : [];
     return D.map((d, i) => Object.assign({}, d, { no: i + 1 }));
   }
 
   function missing(ctx) {
     const x = prep(ctx), f = x.f, m = [], need = (k, l) => { if (!f[k]) m.push(l); };
     const K = x.kase;
-    if (['first', 'agm', 'casual', 'annual'].includes(K) && (!ctx.a || !ctx.a.firm)) m.push(K === 'annual' ? 'Statutory auditor (CA firm)' : 'CA firm');
+    if (['first', 'agm', 'casual', 'annual'].includes(K) || (K === 'dpt3' && f.audCert === 'yes') || K === 'stk2') if (!ctx.a || !ctx.a.firm) m.push(K === 'annual' ? 'Statutory auditor (CA firm)' : 'CA firm');
     if (!ctx.d || !ctx.d.name) m.push('Signing director');
-    need('place', 'Place');
+    if (K !== 'registers') need('place', 'Place');
     if (K === 'first') { need('incDate', 'Date of incorporation'); need('bmDate', 'Board meeting date'); need('bmTime', 'Board meeting time'); }
     if (K === 'agm') { need('agmNo', 'AGM number'); need('agmDate', 'AGM date'); need('agmTime', 'AGM time'); need('bmDate', 'Board meeting date'); }
     if (K === 'casual') { need('prevFirm', 'Outgoing auditor firm'); need('vacDate', 'Date of vacancy'); need('bmDate', 'Board meeting date'); need('bmTime', 'Board meeting time');
@@ -734,6 +1214,15 @@
     if (K === 'dirapp') { need('appName', 'New director name'); need('appDin', 'New director DIN'); need('appFather', 'Father’s name'); need('appAddr', 'Address'); need('bmDate', 'Board meeting date'); need('bmTime', 'Board meeting time');
       if (x.egmApp || x.regularise) { need('egmDate', 'EGM date'); need('egmTime', 'EGM time'); } }
     if (K === 'dirres') { if (!x.res.name) m.push('Resigning director'); need('resLetter', 'Date of resignation letter'); need('resReceipt', 'Date of receipt'); need('bmDate', 'Board meeting date'); need('bmTime', 'Board meeting time'); }
+    if (K === 'allot') { need('offerShares', 'Number of shares offered'); need('bmDate', 'Board meeting date (offer)'); need('offerDate', 'Date of offer'); need('lastDate', 'Last date of acceptance'); need('alDate', 'Allotment meeting date'); if (!cells(f.allottees, 6).length) m.push('Allottees list'); }
+    if (K === 'authcap') { need('newCap', 'New authorised capital'); need('bmDate', 'Board meeting date'); need('egmDate', 'EGM date'); need('egmTime', 'EGM time'); }
+    if (K === 'transfer') { if (!(x.c.shareholders || [])[parseInt(f.fromIndex, 10)]) m.push('Transferor'); need('toName', 'Transferee name'); need('trShares', 'Number of shares'); need('execDate', 'Date of execution'); need('bmDate', 'Board meeting date'); }
+    if (K === 'regoffice') { need('newAddr', 'New address'); need('bmDate', 'Board meeting date'); need('effDate', 'Effective date'); need('ownerName', 'Owner of premises'); if (f.scope === 'roc') { need('egmDate', 'EGM date'); need('egmTime', 'EGM time'); } }
+    if (K === 'inc20a') { if (!x.c.incDate) m.push('Date of incorporation (client master)'); need('bmDate', 'Board meeting date'); }
+    if (K === 'dpt3') { need('fyEnd', 'Financial year end'); }
+    if (K === 'msme1') { if (!cells(f.msmeRows, 6).length) m.push('Supplier dues'); }
+    if (K === 'stk2') { need('bmDate', 'Board meeting date'); need('egmDate', 'EGM date'); need('accDate', 'Statement of accounts date'); }
+    if (K === 'llp') { need('fyEnd', 'Financial year end'); need('approveDate', 'Date of approval by partners'); }
     if (K === 'annual') { need('fyEnd', 'Financial year end'); need('agmNo', 'AGM number'); need('agmDate', 'AGM date'); need('agmTime', 'AGM time'); need('bmDate', 'Board meeting date'); need('bmTime', 'Board meeting time');
       if (!x.isOPC && !x.d2.name) m.push('Second signing director'); }
     return m;
@@ -780,6 +1269,37 @@
       row('Board meeting approving accounts — before AGM notice', f.agmNotice || addDays(f.agmDate, -22), f.bmDate, 'Meeting', 'Sec 134(1)');
       row('File e-Form AOC-4', addDays(f.agmDate, 30), f.aoc4Date, 'Filed', 'within 30 days of AGM, Sec 137', 'aoc4');
       row('File e-Form ' + x.retForm, addDays(f.agmDate, 60), f.mgt7Date, 'Filed', 'within 60 days of AGM, Sec 92(4)', 'mgt7');
+    } else if (K === 'allot') {
+      row('Notice of Board meeting (offer)', addDays(f.bmDate, -7), f.bmNotice, 'Notice', 'Sec 173(3)');
+      row('Rights offer open for at least 15 days', addDays(f.offerDate, 15), f.lastDate, 'Closes', 'Sec 62(1)(a)(i) — shorter only with 90% consent');
+      row('File e-Form PAS-3', addDays(f.alDate, 30), f.pas3Date, 'Filed', 'within 30 days of allotment, Sec 39(4)', 'pas3');
+      row('Issue share certificates', addMonths(f.alDate, 2), f.certDate, 'Issued', 'within 2 months, Sec 56(4)(a)');
+    } else if (K === 'authcap') {
+      row('Notice of Board meeting', addDays(f.bmDate, -7), f.bmNotice, 'Notice', 'Sec 173(3)');
+      row('Dispatch EGM notice (21 clear days)', addDays(f.egmDate, -22), f.egmNotice, 'Notice', 'Sec 101');
+      row('File e-Form SH-7', addDays(f.egmDate, 30), f.sh7Date, 'Filed', 'within 30 days of resolution, Sec 64', 'sh7');
+    } else if (K === 'transfer') {
+      row('Lodge SH-4 with the company', addDays(f.execDate, 60), f.lodgeDate, 'Lodged', 'within 60 days of execution, Rule 11');
+      row('Register transfer & deliver certificate', addMonths(f.lodgeDate || f.bmDate, 1), f.certDate, 'Delivered', 'within one month, Sec 56(4)(c)');
+    } else if (K === 'regoffice') {
+      if (f.scope === 'roc') row('Dispatch EGM notice (21 clear days)', addDays(f.egmDate, -22), f.egmNotice, 'Notice', 'Sec 101');
+      row('File e-Form INC-22', addDays(f.scope === 'roc' ? f.egmDate : f.effDate, 30), f.inc22Date, 'Filed', 'within 30 days of change, Sec 12(4)', 'inc22');
+      if (f.scope === 'roc') row('File e-Form MGT-14', addDays(f.egmDate, 30), f.mgt14Date, 'Filed', 'within 30 days, Sec 117', 'mgt14');
+    } else if (K === 'inc20a') {
+      row('File e-Form INC-20A', addDays(x.c.incDate, 180), f.inc20aDate, 'Filed', 'within 180 days of incorporation, Sec 10A', 'inc20a');
+    } else if (K === 'dpt3') {
+      row('File e-Form DPT-3 for FY ' + fyLabel(f.fyEnd), yr(f.fyEnd) ? yr(f.fyEnd) + '-06-30' : '', f.dpt3Date, 'Filed', 'by 30 June, Rule 16 / 16A', 'dpt3');
+    } else if (K === 'msme1') {
+      const y = num(f.msmeYear), h1 = f.half !== 'h2';
+      row('File e-Form MSME-1 (' + (h1 ? 'April–September' : 'October–March') + ')', y ? (h1 ? (y - 1) + '-10-31' : y + '-04-30') : '', f.msmeDate, 'Filed', 'half-yearly return', 'msme1');
+    } else if (K === 'stk2') {
+      row('Dispatch EGM notice (21 clear days)', addDays(f.egmDate, -22), f.egmNotice, 'Notice', 'Sec 101');
+      row('File e-Form MGT-14 (special resolution)', addDays(f.egmDate, 30), f.mgt14Date, 'Filed', 'within 30 days, Sec 117', 'mgt14');
+      row('File e-Form STK-2 (statement of accounts ≤ 30 days old)', addDays(f.accDate, 30), f.stk2Date, 'Filed', 'Rule 4(3)', 'stk2');
+    } else if (K === 'llp') {
+      const y = yr(f.fyEnd);
+      row('File LLP Form 11 (Annual Return)', y ? y + '-05-30' : '', f.form11Date, 'Filed', 'within 60 days of FY end, Rule 25', 'form11');
+      row('File LLP Form 8 (Statement of Account & Solvency)', y ? y + '-10-30' : '', f.form8Date, 'Filed', 'by 30 October, Rule 24', 'form8');
     }
     return R.map(r => Object.assign(r, { status: r.due && r.actual ? (r.actual <= r.due ? 'ok' : 'late') : '' }));
   }
@@ -797,6 +1317,17 @@
       if (left < min) W.push('Only ' + left + ' director(s) will remain — the minimum for this company is ' + min + ' (Sec 149(1)). Appoint a new director first.');
       if (x.d === x.res || (x.d.din && x.d.din === x.res.din)) W.push('The signing director is the person resigning — choose another director to sign the company documents.');
     }
+    if (x.kase === 'allot') {
+      const fv = num(c.faceValue) || 10, after = num(c.paidCap) + cells(f.allottees, 6).reduce((s, r) => s + num(r[2]), 0) * fv;
+      if (num(c.authCap) && after > num(c.authCap)) W.push('Paid-up capital after allotment (Rs. ' + inr(after) + ') will exceed the authorised capital (Rs. ' + inr(num(c.authCap)) + '). Increase the authorised capital first (SH-7).');
+      if (!(c.shareholders || []).length) W.push('Add the existing shareholders in the client master so that each one gets a Letter of Offer with the correct entitlement.');
+      if (dematNote(x)) W.push(dematNote(x));
+    }
+    if (x.kase === 'authcap' && num(f.newCap) && num(f.newCap) <= num(f.oldCap || c.authCap)) W.push('The new authorised capital must be more than the existing authorised capital.');
+    if (x.kase === 'transfer') { const h = (c.shareholders || [])[parseInt(f.fromIndex, 10)]; if (h && num(f.trShares) > num(h.shares)) W.push('The transferor holds only ' + inr(num(h.shares)) + ' shares.'); if (dematNote(x)) W.push(dematNote(x)); }
+    if (x.kase === 'inc20a' && c.incDate && c.incDate < '2018-11-02') W.push('INC-20A applies only to companies incorporated on or after 2 November 2018.');
+    if (x.kase === 'llp' && c.type !== 'llp') W.push('This client is not marked as an LLP in the client master.');
+    if (c.type === 'llp' && x.kase !== 'llp' && x.kase !== 'registers') W.push('This client is an LLP — company documents do not apply. Use the LLP case.');
     if (x.kase === 'annual') {
       if (!x.isOPC && x.d2.name && x.d.name === x.d2.name) W.push('Choose two different directors to sign the Board’s Report and financial statements (Sec 134).');
       if (!x.small && x.bms.length && (x.bms.length < 4 || !bmGapOK(x))) W.push('Sec 173(1): at least 4 Board meetings a year with a gap of not more than 120 days. Please check the dates entered.');
@@ -810,6 +1341,6 @@
     return String(d.no).padStart(2, '0') + '_' + safe(d.title).slice(0, 60) + '_' + safe(companyName).slice(0, 40) + '.docx';
   }
 
-  return { CASES, CASE_TITLE, CASE_SHORT, LH_CO, LH_CA, LH_NONE, LH_PLAIN, BL, docDefs, missing, timeline, warnings, fileName,
+  return { CASES, CASE_TITLE, CASE_SHORT, LH_CO, LH_CA, LH_NONE, LH_PLAIN, BL, docDefs, missing, timeline, warnings, fileName, defaults, agmNumber,
     helpers: { ld, sd, tm, ord, addDays, addMonths, oneLine, fyStart, firstFYEnd, pd, parseDMY } };
 });

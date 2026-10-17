@@ -11,6 +11,7 @@ const db = require('./lib/db');
 const { buildDocx } = require('./lib/docx-builder');
 const DC = require('./public/js/docs-content.js');
 const LH = require('./lib/letterhead');
+const XL = require('./lib/import');
 
 const PROD = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
@@ -51,7 +52,7 @@ function cleanLogo(l) {
   if (!(w > 0 && h > 0)) return null;
   return { data: l.data, w, h };
 }
-const CLIENT_FIELDS = ['name', 'cin', 'incDate', 'type', 'pan', 'addr', 'email', 'phone', 'web', 'csName', 'csMno', 'authCap', 'paidCap', 'faceValue'];
+const CLIENT_FIELDS = ['name', 'cin', 'incDate', 'type', 'pan', 'addr', 'email', 'phone', 'web', 'csName', 'csMno', 'authCap', 'paidCap', 'faceValue', 'size', 'lastAgmNo', 'lastAgmDate'];
 function cleanClient(b) {
   const c = {};
   CLIENT_FIELDS.forEach(k => { c[k] = str(b[k], k === 'addr' ? 600 : 200); });
@@ -242,6 +243,41 @@ app.delete('/api/cas/:id', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ---------------- Excel import of clients ---------------- */
+app.get('/api/import/template', requireLogin, async (req, res) => {
+  const buf = await XL.template();
+  res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.set('Content-Disposition', 'attachment; filename="NeuSource_CRM_Client_Import_Template.xlsx"');
+  res.send(Buffer.from(buf));
+});
+app.post('/api/import', requireLogin, async (req, res) => {
+  const data = String((req.body && req.body.data) || '').replace(/^data:[^,]*,/, ''), update = req.body && req.body.mode === 'update';
+  const buf = Buffer.from(data, 'base64');
+  if (!buf.length) return bad(res, 'The file is empty.');
+  if (buf.length > 8 * 1024 * 1024) return bad(res, 'The Excel file is larger than 8 MB.');
+  let parsed; try { parsed = await XL.parse(buf); } catch (e) { return bad(res, e.message); }
+  const uid = req.session.user.id, out = { created: 0, updated: 0, skipped: 0, errors: parsed.errors.slice() };
+  const { rows: existing } = await db.query("SELECT id, data FROM clients");
+  const byCin = new Map(existing.map(r => [String(r.data.cin || '').toUpperCase(), r]));
+  for (const row of parsed.rows.slice(0, 2000)) {
+    const c = cleanClient(row), ex = byCin.get(c.cin);
+    try {
+      if (ex) {
+        if (!update) { out.skipped++; continue; }
+        const old = ex.data;
+        c.directors = c.directors.map(d => { const o = (old.directors || []).find(od => (d.din && od.din === d.din) || od.name.toLowerCase() === d.name.toLowerCase()); return Object.assign({}, d, { sign: o && o.sign || null }); });
+        const merged = Object.assign({}, old, Object.fromEntries(Object.entries(c).filter(([k, v]) => k === 'directors' ? v.length : (v !== '' && v != null && !(Array.isArray(v) && !v.length)))));
+        await db.query('UPDATE clients SET data=$1, updated_by=$2, updated_at=now() WHERE id=$3', [merged, uid, ex.id]); out.updated++;
+      } else {
+        const r = await db.query('INSERT INTO clients (data, created_by, updated_by) VALUES ($1,$2,$2) RETURNING id', [c, uid]);
+        byCin.set(c.cin, { id: r.rows[0].id, data: c }); out.created++;
+      }
+    } catch (e) { out.errors.push('Row ' + row._row + ' (' + c.name + '): ' + e.message); }
+  }
+  db.log(uid, 'client.import', out.created + ' added, ' + out.updated + ' updated, ' + out.skipped + ' skipped');
+  res.json(out);
+});
+
 /* ---------------- Word letterheads (company / CA firm) ---------------- */
 const OWNERS = { clients: 'clients', cas: 'cas' };
 app.put('/api/:owner/:id/letterhead', requireLogin, async (req, res) => {
@@ -319,6 +355,36 @@ app.post('/api/generate', requireLogin, async (req, res) => {
   await saveFiling(clientId, kase, b, req.session.user.id);
   const lhFiles = { company: await letterheadFile('clients', clientId), ca: await letterheadFile('cas', caId) };
 
+  // Update the client master after allotment / transfer / change of registered office (when chosen)
+  if (f.updateMaster === 'yes' && ['allot', 'transfer', 'regoffice', 'authcap'].includes(kase)) {
+    const num = s => parseFloat(String(s == null ? '' : s).replace(/[,\s]/g, '')) || 0, fv = num(c.faceValue) || 10;
+    const upd = JSON.parse(JSON.stringify(c)); upd.shareholders = upd.shareholders || [];
+    let note = '';
+    if (kase === 'allot') {
+      let added = 0;
+      String(f.allottees || '').split('\n').map(l => l.split('|').map(t => t.trim())).filter(p => p[0]).forEach(p => {
+        const n = num(p[2]); added += n;
+        const h = upd.shareholders.find(s => (p[1] && s.folio === p[1]) || s.name.toLowerCase() === p[0].toLowerCase());
+        if (h) h.shares = String(num(h.shares) + n); else upd.shareholders.push({ name: p[0], folio: p[1] || '', shares: String(n), cat: 'Individual' });
+      });
+      upd.paidCap = String(num(upd.paidCap) + added * fv); note = 'allotment of ' + added + ' shares';
+    } else if (kase === 'transfer') {
+      const from = upd.shareholders[parseInt(f.fromIndex, 10)], n = num(f.trShares);
+      if (from && n) {
+        from.shares = String(Math.max(0, num(from.shares) - n));
+        const to = upd.shareholders.find(s => s.name.toLowerCase() === String(f.toName || '').toLowerCase());
+        if (to) to.shares = String(num(to.shares) + n); else upd.shareholders.push({ name: f.toName, folio: f.toFolio || '', shares: String(n), cat: 'Individual' });
+        upd.shareholders = upd.shareholders.filter(s => num(s.shares) > 0); note = 'transfer of ' + n + ' shares';
+      }
+    } else if (kase === 'regoffice' && f.newAddr) { upd.addr = f.newAddr; note = 'registered office changed'; }
+    else if (kase === 'authcap' && f.newCap) { upd.authCap = f.newCap; note = 'authorised capital ' + f.newCap; }
+    if (note) {
+      await db.query('UPDATE clients SET data=$1, updated_by=$2, updated_at=now() WHERE id=$3', [upd, req.session.user.id, clientId]);
+      await db.query("UPDATE filings SET data = data || $1 WHERE client_id=$2 AND case_type=$3", [{ updateMaster: 'done' }, clientId, kase]);
+      db.log(req.session.user.id, 'client.update', c.name + ': ' + note);
+      res.set('X-Masters-Changed', '1');
+    }
+  }
   // Director appointment: optionally add the new director to the client's director list
   if (kase === 'dirapp' && f.addToMaster === 'yes' && f.appName) {
     const exists = (c.directors || []).some(x => (f.appDin && x.din === f.appDin) || x.name.toLowerCase() === f.appName.toLowerCase());

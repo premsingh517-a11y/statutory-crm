@@ -9,10 +9,13 @@ const todayISO = () => { const t = new Date(); return t.getFullYear() + '-' + St
 const isAdmin = () => S.me && S.me.role === 'admin';
 
 const S = { me: null, clients: [], cas: [], filings: [] };
+const OFFLINE = 'Portal ka server band hai. START.bat wali kaali window khuli rakhiye (band ho gayi ho to START.bat dobara chalaiye), phir page refresh karein.';
 
 /* ---------------- API ---------------- */
 async function api(method, url, body) {
-  const r = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' });
+  let r;
+  try { r = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' }); }
+  catch (e) { throw new Error(OFFLINE); }
   if (r.status === 401 && !url.includes('/api/login')) { S.me = null; showAuth(); throw new Error('Please log in again.'); }
   const ct = r.headers.get('content-type') || '';
   const data = ct.includes('application/json') ? await r.json() : null;
@@ -300,7 +303,7 @@ async function download(ids, zip) {
     const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000);
     if ($('savedNote')) $('savedNote').textContent = '✓ Saved for the team';
     toast(zip ? 'ZIP downloaded' : 'Word file downloaded');
-  } catch (e) { fail(e); }
+  } catch (e) { fail(e instanceof TypeError ? new Error(OFFLINE) : e); }
   if (btn) { btn.disabled = false; btn.textContent = '⬇ Download selected (ZIP)'; }
 }
 

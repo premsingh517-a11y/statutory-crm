@@ -313,6 +313,20 @@ app.use((err, req, res, next) => {
   bad(res, 'Something went wrong on the server. Please try again.', 500);
 });
 
+// Keep the portal running if a single request hits an unexpected error; write it to a log file.
+function logCrash(kind, err) {
+  const line = new Date().toISOString() + ' ' + kind + ': ' + (err && err.stack || err) + '\n';
+  console.error(line);
+  try { const fs = require('fs'); fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true }); fs.appendFileSync(path.join(__dirname, 'data', 'error.log'), line); } catch (e) {}
+}
+process.on('unhandledRejection', e => logCrash('unhandledRejection', e));
+process.on('uncaughtException', e => logCrash('uncaughtException', e));
+
 db.init().then(() => {
-  app.listen(PORT, () => console.log('NeuSource Statutory CRM running on http://localhost:' + PORT));
-}).catch(e => { console.error('Database setup failed:', e.message); process.exit(1); });
+  const server = app.listen(PORT, () => console.log('NeuSource Statutory CRM running on http://localhost:' + PORT));
+  server.on('error', e => {
+    if (e.code === 'EADDRINUSE') console.error('\nPort ' + PORT + ' is already in use — the portal may already be running in another window. Open http://localhost:' + PORT + '\n');
+    else logCrash('server', e);
+    process.exit(1);
+  });
+}).catch(e => { logCrash('Database setup failed', e); process.exit(1); });

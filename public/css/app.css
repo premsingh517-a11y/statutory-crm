@@ -170,3 +170,15 @@ button:disabled{opacity:.55;cursor:not-allowed}
 }
 @media(max-width:960px){.auth .formside{order:-1;padding-top:28px}.auth .hero ul{display:none}}
 input.autofill,textarea.autofill{background:#fffaf2;border-color:#ecd3a9}
+.dirpick{display:flex;flex-wrap:wrap;gap:6px;min-height:41px;align-items:center;padding:4px;border:1px solid #ddd5d3;border-radius:8px;background:#fff}
+.dirchip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:20px;font-size:12.5px;font-weight:500;cursor:pointer;margin:0;color:var(--ink2);background:#faf8f7}
+.dirchip input{display:none}
+.dirchip.on{background:var(--brand-l);border-color:#e2b9b5;color:var(--brand)}
+.dirchip .ord{display:inline-flex;width:18px;height:18px;border-radius:50%;background:var(--brand);color:#fff;font-size:10.5px;align-items:center;justify-content:center}
+.dirchip small{color:var(--muted)}
+.dirpick{display:flex;flex-wrap:wrap;gap:6px;min-height:41px;align-items:center;padding:4px;border:1px solid #ddd5d3;border-radius:8px;background:#fff}
+.dirchip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:20px;font-size:12.5px;font-weight:500;cursor:pointer;margin:0;color:var(--ink2);background:#faf8f7}
+.dirchip input{display:none}
+.dirchip.on{background:var(--brand-l);border-color:#e2b9b5;color:var(--brand)}
+.dirchip .ord{display:inline-flex;width:18px;height:18px;border-radius:50%;background:var(--brand);color:#fff;font-size:10.5px;align-items:center;justify-content:center}
+.dirchip small{color:var(--muted)}

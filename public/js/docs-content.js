@@ -81,7 +81,10 @@
     x.isRe = x.kase === 'agm' && f.apptType === 're';
     x.resign = x.kase === 'casual' && f.reason !== 'other';
     // second signing director (annual filing) and resigning director (from client master)
-    x.d2 = f.dir2Index !== undefined && f.dir2Index !== '' ? (dirs[parseInt(f.dir2Index, 10)] || {}) : {};
+    // signing directors (multi-select): ds = all selected, d = first, d2 = second
+    x.ds = (Array.isArray(ctx.ds) && ctx.ds.length ? ctx.ds : (x.d && x.d.name ? [x.d] : [])).filter(d => d && d.name);
+    if (x.ds.length) x.d = x.ds[0];
+    x.d2 = x.ds[1] || (f.dir2Index !== undefined && f.dir2Index !== '' ? (dirs[parseInt(f.dir2Index, 10)] || {}) : {});
     x.res = f.resIndex !== undefined && f.resIndex !== '' ? (dirs[parseInt(f.resIndex, 10)] || {}) : {};
     // new director (appointment)
     const t = f.appTitle || 'Mr.';
@@ -130,12 +133,17 @@
   const lettered = items => items.map((t, i) => ({ p: '(' + 'abcdefghij'[i] + ')\t' + t, hang: true, al: 'j' }));
   const head = t => ({ p: t, b: true, keep: true });
   const signoff = () => [{ p: 'Thanking you,', after: 0, keep: true }, { p: 'Yours faithfully,', keep: true }];
-  function sigCompany(x, date, lead, who) {
-    const { c, f } = x, d = who || x.d;
-    return [{ gap: 1 }, { p: lead || ('For ' + c.name), b: true, keep: true }, { sign: d.sign || null },
-      { p: v(d.name), b: true, after: 0, keep: true }, { p: v(d.desig || 'Director'), after: 0, keep: true },
-      { p: 'DIN: ' + v(d.din), after: 0, keep: true }, { p: 'Place: ' + v(f.place), after: 0, keep: true }, { p: 'Date: ' + ld(date), after: 0 }];
+  function sigCompany(x, date, lead, who) { // all selected signing directors (or one specific person)
+    const { c, f } = x, list = who ? [who] : (x.ds && x.ds.length ? x.ds : [x.d]);
+    const out = [{ gap: 1 }, { p: lead || ('For ' + c.name), b: true, keep: true }];
+    list.forEach((d, i) => { if (i) out.push({ gap: 1 }); out.push({ sign: d.sign || null }, { p: v(d.name), b: true, after: 0, keep: true }, { p: v(d.desig || 'Director'), after: 0, keep: true }, { p: 'DIN: ' + v(d.din), after: 0, keep: true }); });
+    out.push({ p: 'Place: ' + v(f.place), after: 0, keep: true }, { p: 'Date: ' + ld(date), after: 0 });
+    return out;
   }
+  // "X, Director (DIN), be and is hereby authorised" — or several selected directors, severally authorised
+  const authWho = x => x.ds && x.ds.length > 1
+    ? x.ds.map(d => v(d.name) + ' (DIN: ' + v(d.din) + ')').join(', ').replace(/, ([^,]*)$/, ' and $1') + ', Directors of the Company, be and are hereby severally authorised'
+    : v(x.d.name) + ', ' + v(x.d.desig || 'Director') + ' (DIN: ' + v(x.d.din) + '), be and is hereby authorised';
   function sigTwo(x, date) { // Board's report / financial statements: two directors (one for OPC)
     const one = d => [{ sign: d.sign || null }, { p: v(d.name), b: true, after: 0, keep: true }, { p: v(d.desig || 'Director'), after: 0, keep: true }, { p: 'DIN: ' + v(d.din), after: 0, keep: true }];
     return [{ gap: 1 }, { p: 'For and on behalf of the Board of Directors\nFor ' + x.c.name, b: true, keep: true }, ...one(x.d),
@@ -199,7 +207,7 @@
       { p: '“**RESOLVED THAT** pursuant to the provisions of Sections 139, 141, 142 and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Audit and Auditors) Rules, 2014, and on the basis of the written consent and certificate of eligibility received from ' + x.firmDesc + ', the Board of Directors hereby recommends to the members of the Company the ' + re + 'appointment of ' + v(x.a.firm) + ' as the Statutory Auditors of the Company ' + termText(x) + ', ' + x.remun + '.”' },
       { p: '**2. APPROVAL OF NOTICE OF THE ' + ord(f.agmNo).toUpperCase() + ' ANNUAL GENERAL MEETING**', u: true },
       { p: '“**RESOLVED THAT** the ' + ord(f.agmNo) + ' Annual General Meeting of the members of the Company be held on ' + dayName(f.agmDate) + ', ' + ld(f.agmDate) + ' at ' + tm(f.agmTime) + ' at ' + oneLine(x.venue(f.agmVenue)) + ', and the draft Notice convening the said meeting, as placed before the Board, be and is hereby approved.' },
-      { p: '**RESOLVED FURTHER THAT** ' + v(x.d.name) + ', ' + v(x.d.desig || 'Director') + ' (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and issue the Notice of the Annual General Meeting to the members, directors and auditors of the Company and to do all such acts, deeds and things as may be necessary in this regard.”' }];
+      { p: '**RESOLVED FURTHER THAT** ' + authWho(x) + ' to sign and issue the Notice of the Annual General Meeting to the members, directors and auditors of the Company and to do all such acts, deeds and things as may be necessary in this regard.”' }];
   }
   function resBoardCasual(x) {
     const f = x.f, res = x.resign, out = [];
@@ -208,7 +216,7 @@
     out.push({ p: '**' + (res ? '2. ' : '') + 'APPOINTMENT OF STATUTORY AUDITORS TO FILL THE CASUAL VACANCY**', u: true },
       { p: '“**RESOLVED THAT** pursuant to the provisions of Section 139(8) and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Audit and Auditors) Rules, 2014 ' + STAT + ', and on the basis of the written consent and certificate of eligibility received under Sections 139(1) and 141 of the Act, ' + x.firmDesc + ', be and are hereby appointed as the Statutory Auditors of the Company ' + termText(x) + ', ' + x.remun + (res ? ', subject to the approval of the members of the Company at a general meeting to be held within three months of the recommendation of the Board' : '') + '.' });
     if (res) out.push({ p: '**RESOLVED FURTHER THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ' to seek the approval of the members for the above appointment, and the draft Notice convening the said meeting, along with the Explanatory Statement under Section 102 of the Act, as placed before the Board, be and is hereby approved.' });
-    out.push({ p: '**RESOLVED FURTHER THAT** ' + v(x.d.name) + ', ' + v(x.d.desig || 'Director') + ' (DIN: ' + v(x.d.din) + '), be and is hereby authorised to ' + (res ? 'sign and issue the Notice of the Extraordinary General Meeting, to ' : '') + 'intimate the said appointment to the Auditors, to sign and file e-Form ADT-1 with the Registrar of Companies, and to do all such acts, deeds, matters and things as may be necessary to give effect to this resolution.”' });
+    out.push({ p: '**RESOLVED FURTHER THAT** ' + authWho(x) + ' to ' + (res ? 'sign and issue the Notice of the Extraordinary General Meeting, to ' : '') + 'intimate the said appointment to the Auditors, to sign and file e-Form ADT-1 with the Registrar of Companies, and to do all such acts, deeds, matters and things as may be necessary to give effect to this resolution.”' });
     return out;
   }
   function resMembersCasual(x) {
@@ -434,7 +442,7 @@
       } else out.push(...resAdditional(x).map(b => Object.assign({}, b, { al: b.al || 'j' })));
       if (needEGM) out.push({ p: '**' + (x.egmApp ? '2' : '') + (x.egmApp ? '. ' : '') + 'CONVENING OF EXTRAORDINARY GENERAL MEETING**', u: true },
         { p: '“**RESOLVED THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ' to consider the ' + (x.egmApp ? 'appointment' : 'regularisation') + ' of ' + p.full + ' as a Director of the Company, and the draft Notice convening the said meeting, along with the Explanatory Statement under Section 102 of the Act, as placed before the Board, be and is hereby approved.', al: 'j' },
-        { p: '**RESOLVED FURTHER THAT** ' + v(x.d.name) + ', ' + v(x.d.desig || 'Director') + ' (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and issue the Notice of the Extraordinary General Meeting to the members, directors and auditors of the Company.”', al: 'j' });
+        { p: '**RESOLVED FURTHER THAT** ' + authWho(x) + ' to sign and issue the Notice of the Extraordinary General Meeting to the members, directors and auditors of the Company.”', al: 'j' });
       out.push({ p: 'Certified True Copy', b: true }, ...sigCompany(x, f.bmDate));
       return out;
     } });
@@ -645,7 +653,7 @@
         { p: '“**RESOLVED THAT** the Board’s Report for the ' + FYW + ' ended ' + ld(x.fyEnd) + (f.rpt === 'yes' ? ', together with the annexure in Form AOC-2,' : '') + ' prepared in accordance with Section 134(3) of the Companies Act, 2013' + (x.small ? ' read with Rule 8A of the Companies (Accounts) Rules, 2014' : ' read with Rule 8 of the Companies (Accounts) Rules, 2014') + ', as placed before the Board, be and is hereby approved, and that ' + two + ', be and ' + (x.isOPC ? 'is' : 'are') + ' hereby authorised to sign the same in terms of Section 134(6) of the Act.”', al: 'j' },
         { p: '**3. CONVENING OF THE ' + ord(f.agmNo).toUpperCase() + ' ANNUAL GENERAL MEETING**', u: true },
         { p: '“**RESOLVED THAT** the ' + ord(f.agmNo) + ' Annual General Meeting of the members of the Company be held on ' + dayName(f.agmDate) + ', ' + ld(f.agmDate) + ' at ' + tm(f.agmTime) + ' at ' + oneLine(x.venue(f.agmVenue)) + ', and the draft Notice convening the said meeting, as placed before the Board, be and is hereby approved.' + (f.shortNotice === 'yes' ? ' The meeting may be held at a shorter notice subject to the consent of not less than ninety-five per cent of the members entitled to vote thereat, in terms of the proviso to Section 101(1) of the Act.' : ''), al: 'j' },
-        { p: '**RESOLVED FURTHER THAT** ' + v(x.d.name) + ', ' + v(x.d.desig || 'Director') + ' (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and issue the Notice of the Annual General Meeting to the members, directors and auditors of the Company.”', al: 'j' },
+        { p: '**RESOLVED FURTHER THAT** ' + authWho(x) + ' to sign and issue the Notice of the Annual General Meeting to the members, directors and auditors of the Company.”', al: 'j' },
         { p: '**4. AUTHORISATION FOR ANNUAL FILINGS**', u: true },
         { p: '“**RESOLVED THAT** any Director of the Company be and is hereby severally authorised to sign and file e-Form AOC-4 (financial statements) and e-Form ' + x.retForm + ' (annual return) with the Registrar of Companies for the ' + FYW + ' ended ' + ld(x.fyEnd) + ', and to do all such acts, deeds, matters and things as may be necessary in this regard.”', al: 'j' },
         { p: 'Certified True Copy', b: true }, ...sigCompany(x, f.bmDate)];
@@ -788,7 +796,7 @@
       { p: '“**RESOLVED THAT** pursuant to the provisions of Section 62(1)(a) and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Share Capital and Debentures) Rules, 2014 ' + STAT + ' and the Articles of Association of the Company, the consent of the Board be and is hereby accorded to offer ' + desc + ', aggregating to ' + rupees(offer * price) + ', to the persons who, on the date of the offer, are holders of equity shares of the Company, ' + ratio + ', by way of a Letter of Offer.' },
       { p: '**RESOLVED FURTHER THAT** the offer shall be made by a notice specifying the number of shares offered and shall remain open for a period of ' + (f.offerDays || '15') + ' days from the date of the offer, i.e. from ' + ld(f.offerDate) + ' to ' + ld(f.lastDate) + ', within which the offer, if not accepted, shall be deemed to have been declined' + (num(f.offerDays) && num(f.offerDays) < 15 ? ', the shorter period being with the consent of not less than ninety per cent of the members' : '') + '.' },
       { p: '**RESOLVED FURTHER THAT** the offer shall include a right exercisable by the shareholders to renounce the shares offered to them, or any of them, in favour of any other person, and that the Board may dispose of the shares not taken up in such manner as it thinks most beneficial to the Company and not dis-advantageous to the shareholders.' },
-      { p: '**RESOLVED FURTHER THAT** ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and dispatch the Letter of Offer to the shareholders and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }]) });
+      { p: '**RESOLVED FURTHER THAT** ' + authWho(x) + ' to sign and dispatch the Letter of Offer to the shareholders and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }]) });
     D.push({ id: 'offerletter', title: 'Letter of Offer with Acceptance / Renunciation Form', sub: 'One page set per shareholder from the client master', lh: LH_CO, build: () => {
       const list = (c.shareholders || []).filter(h => h.name).length ? c.shareholders.filter(h => h.name) : [{ name: '', folio: '', shares: '' }];
       const out = [];
@@ -863,7 +871,7 @@
       { p: '**1. RECOMMENDATION FOR INCREASE IN AUTHORISED SHARE CAPITAL**', u: true },
       { p: '“**RESOLVED THAT** the Board hereby recommends to the members of the Company the increase in the Authorised Share Capital of the Company from ' + rupees(oldC) + ' to ' + rupees(newC) + ' and the consequent alteration of Clause V of the Memorandum of Association, by way of an ' + (special ? 'special' : 'ordinary') + ' resolution under Sections 13 and 61 of the Companies Act, 2013.”' },
       { p: '**2. CONVENING OF EXTRAORDINARY GENERAL MEETING**', u: true },
-      { p: '“**RESOLVED THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ', and the draft Notice along with the Explanatory Statement under Section 102 of the Act, as placed before the Board, be and is hereby approved; and that ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and issue the Notice.”' }]) });
+      { p: '“**RESOLVED THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ', and the draft Notice along with the Explanatory Statement under Section 102 of the Act, as placed before the Board, be and is hereby approved; and that ' + authWho(x) + ' to sign and issue the Notice.”' }]) });
     D.push(...egmDocs(x, 'Increase in the Authorised Share Capital and alteration of the Capital Clause of the Memorandum of Association', res,
       ['The present Authorised Share Capital of the Company is ' + rupees(oldC) + ' divided into ' + sharesW(oldC / fv) + ' Equity Shares of Rs. ' + inr(fv) + '/- each. To meet the future requirements of funds and to enable the Company to issue further shares, the Board of Directors at its meeting held on ' + ld(f.bmDate) + ' recommended increasing the Authorised Share Capital to ' + rupees(newC) + '.',
         'The increase requires the alteration of Clause V of the Memorandum of Association and the approval of the members under Sections 13 and 61 of the Companies Act, 2013. A copy of the Memorandum of Association, along with the proposed alteration, is available for inspection at the Registered Office.'], special ? 'special' : 'ordinary'));
@@ -929,7 +937,7 @@
       ? [{ p: '**1. RECOMMENDATION FOR SHIFTING OF REGISTERED OFFICE OUTSIDE THE LOCAL LIMITS**', u: true },
         { p: '“**RESOLVED THAT** the Board hereby recommends to the members of the Company, by way of a special resolution under Section 12(5) of the Companies Act, 2013, the shifting of the Registered Office of the Company from ' + oneLine(c.addr) + ' to ' + newA + ', which is outside the local limits of the city / town / village where the Registered Office is presently situated but within the jurisdiction of the same Registrar of Companies.”' },
         { p: '**2. CONVENING OF EXTRAORDINARY GENERAL MEETING**', u: true },
-        { p: '“**RESOLVED THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ', and the draft Notice along with the Explanatory Statement, as placed before the Board, be and is hereby approved; and that ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and issue the Notice.”' }]
+        { p: '“**RESOLVED THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ', and the draft Notice along with the Explanatory Statement, as placed before the Board, be and is hereby approved; and that ' + authWho(x) + ' to sign and issue the Notice.”' }]
       : [{ p: '**SHIFTING OF REGISTERED OFFICE WITHIN THE LOCAL LIMITS**', u: true },
         { p: '“**RESOLVED THAT** pursuant to the provisions of Section 12 and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Incorporation) Rules, 2014 ' + STAT + ', the Registered Office of the Company be and is hereby shifted from ' + oneLine(c.addr) + ' to ' + newA + ', within the local limits of the same city / town / village, with effect from ' + ld(f.effDate) + '.' },
         { p: '**RESOLVED FURTHER THAT** any Director of the Company be and is hereby severally authorised to file e-Form INC-22 with the Registrar of Companies within thirty days of the change, to paint or affix the name of the Company outside the new office, to update the letterheads and other documents, and to do all such acts, deeds and things as may be necessary to give effect to this resolution.”' }];
@@ -965,7 +973,7 @@
     D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolution', sub: 'Sec 10A — subscription money & INC-20A', lh: LH_CO, build: () => ctcBoard(x, 'bm', [
       { p: '**DECLARATION FOR COMMENCEMENT OF BUSINESS**', u: true },
       { p: '“**RESOLVED THAT** the Board hereby takes note and confirms that every subscriber to the Memorandum of Association of the Company has paid the value of the shares agreed to be taken by him / her, the details of which are as follows:' }, tbl,
-      { p: '**RESOLVED FURTHER THAT** pursuant to Section 10A(1)(a) of the Companies Act, 2013 read with Rule 23A of the Companies (Incorporation) Rules, 2014, ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and file the declaration for commencement of business in e-Form INC-20A with the Registrar of Companies within one hundred and eighty days of incorporation, along with the proof of payment of subscription money, and to do all such acts, deeds and things as may be necessary.”' }], true) });
+      { p: '**RESOLVED FURTHER THAT** pursuant to Section 10A(1)(a) of the Companies Act, 2013 read with Rule 23A of the Companies (Incorporation) Rules, 2014, ' + authWho(x) + ' to sign and file the declaration for commencement of business in e-Form INC-20A with the Registrar of Companies within one hundred and eighty days of incorporation, along with the proof of payment of subscription money, and to do all such acts, deeds and things as may be necessary.”' }], true) });
     D.push({ id: 'decl', title: 'Declaration by Director — Commencement of Business', sub: 'Content of e-Form INC-20A — signed by the director', lh: LH_CO, build: () => [
       { p: 'DECLARATION FOR COMMENCEMENT OF BUSINESS', b: true, al: 'c', u: true }, { p: '[Pursuant to Section 10A(1)(a) of the Companies Act, 2013 and Rule 23A of the Companies (Incorporation) Rules, 2014]', al: 'c', sz: 20 }, { gap: 1 },
       { p: 'I, ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + ') of ' + c.name + ' (CIN: ' + v(c.cin) + '), incorporated on ' + ld(c.incDate) + ', do hereby declare that every subscriber to the Memorandum of Association of the Company has paid the value of the shares agreed to be taken by him / her, as under:', al: 'j' }, tbl,
@@ -1048,7 +1056,7 @@
     D.push({ id: 'boardctc', title: 'Certified True Copy of Board Resolution', sub: 'Proposal for strike off — Sec 248(2)', lh: LH_CO, build: () => ctcBoard(x, 'bm', [
       { p: '**1. PROPOSAL FOR REMOVAL OF NAME OF THE COMPANY FROM THE REGISTER OF COMPANIES**', u: true },
       { p: '“**RESOLVED THAT** the Company ' + ground + ' and has no assets or liabilities as per the statement of accounts as on ' + ld(f.accDate) + ', which is hereby approved; and the Board hereby recommends to the members that an application be made to the Registrar of Companies under Section 248(2) of the Companies Act, 2013 for removing the name of the Company from the Register of Companies.' },
-      { p: '**RESOLVED FURTHER THAT** every Director of the Company be and is hereby authorised to execute the indemnity bond in Form STK-3 and the affidavit in Form STK-4, and that ' + v(x.d.name) + ', Director (DIN: ' + v(x.d.din) + '), be and is hereby authorised to sign and file e-Form STK-2.”' },
+      { p: '**RESOLVED FURTHER THAT** every Director of the Company be and is hereby authorised to execute the indemnity bond in Form STK-3 and the affidavit in Form STK-4, and that ' + authWho(x) + ' to sign and file e-Form STK-2.”' },
       { p: '**2. CONVENING OF EXTRAORDINARY GENERAL MEETING**', u: true },
       { p: '“**RESOLVED THAT** an Extraordinary General Meeting of the members of the Company be held on ' + dayName(f.egmDate) + ', ' + ld(f.egmDate) + ' at ' + tm(f.egmTime) + ' at ' + oneLine(x.venue(f.egmVenue)) + ', and the draft Notice along with the Explanatory Statement, as placed before the Board, be and is hereby approved.”' }]) });
     D.push(...egmDocs(x, 'Removal of the name of the Company from the Register of Companies under Section 248(2)', special,
@@ -1205,7 +1213,7 @@
     const x = prep(ctx), f = x.f, m = [], need = (k, l) => { if (!f[k]) m.push(l); };
     const K = x.kase;
     if (['first', 'agm', 'casual', 'annual'].includes(K) || (K === 'dpt3' && f.audCert === 'yes') || K === 'stk2') if (!ctx.a || !ctx.a.firm) m.push(K === 'annual' ? 'Statutory auditor (CA firm)' : 'CA firm');
-    if (!ctx.d || !ctx.d.name) m.push('Signing director');
+    if (!x.d || !x.d.name) m.push('Signing director');
     if (K !== 'registers') need('place', 'Place');
     if (K === 'first') { need('incDate', 'Date of incorporation'); need('bmDate', 'Board meeting date'); need('bmTime', 'Board meeting time'); }
     if (K === 'agm') { need('agmNo', 'AGM number'); need('agmDate', 'AGM date'); need('agmTime', 'AGM time'); need('bmDate', 'Board meeting date'); }
@@ -1224,7 +1232,7 @@
     if (K === 'stk2') { need('bmDate', 'Board meeting date'); need('egmDate', 'EGM date'); need('accDate', 'Statement of accounts date'); }
     if (K === 'llp') { need('fyEnd', 'Financial year end'); need('approveDate', 'Date of approval by partners'); }
     if (K === 'annual') { need('fyEnd', 'Financial year end'); need('agmNo', 'AGM number'); need('agmDate', 'AGM date'); need('agmTime', 'AGM time'); need('bmDate', 'Board meeting date'); need('bmTime', 'Board meeting time');
-      if (!x.isOPC && !x.d2.name) m.push('Second signing director'); }
+      if (!x.isOPC && !x.d2.name) m.push('Second signing director (tick two signing directors)'); }
     return m;
   }
 
@@ -1315,7 +1323,7 @@
     if (x.kase === 'dirres' && x.res.name) {
       const min = c.type === 'public' ? 3 : c.type === 'opc' ? 1 : 2, left = (c.directors || []).length - 1;
       if (left < min) W.push('Only ' + left + ' director(s) will remain — the minimum for this company is ' + min + ' (Sec 149(1)). Appoint a new director first.');
-      if (x.d === x.res || (x.d.din && x.d.din === x.res.din)) W.push('The signing director is the person resigning — choose another director to sign the company documents.');
+      if (x.ds.some(d => d === x.res || (d.din && d.din === x.res.din))) W.push('A signing director is the person resigning — untick that director for the company documents.');
     }
     if (x.kase === 'allot') {
       const fv = num(c.faceValue) || 10, after = num(c.paidCap) + cells(f.allottees, 6).reduce((s, r) => s + num(r[2]), 0) * fv;

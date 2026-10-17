@@ -134,7 +134,7 @@ PAGES.dashboard = async () => {
 /* =====================================================================
    GENERATE
    ===================================================================== */
-const G = { clientId: '', caId: '', dirIndex: 0, kase: '', form: {} };
+const G = { clientId: '', caId: '', dirIndex: 0, dirIdx: [0], kase: '', form: {} };
 let saveTimer = null, docKey = '';
 const docSel = {};
 const DIRSEL = 'data-dirs';
@@ -222,7 +222,7 @@ const FIELDS = {
   annual: `<div class="grid">
     <div><label>Financial Year Ended <span class="req">*</span></label><input type="date" data-f="fyEnd"><div class="hint">Usually 31 March</div></div>
     <div><label>Company Size <span class="req">*</span></label><select data-f="coSize"><option value="small">Small company / OPC — MGT-7A, abridged Board's Report (Rule 8A)</option><option value="other">Other — MGT-7, full Board's Report (Rule 8)</option></select></div>
-    <div><label>Second Signing Director <span class="req">*</span></label><select data-f="dir2Index" ${DIRSEL}></select><div class="hint">Board's Report & accounts are signed by two directors (Sec 134)</div></div></div>
+    </div>
     <h3>Annual General Meeting</h3><div class="grid">
     <div><label>AGM Number <span class="req">*</span></label><input type="number" min="1" data-f="agmNo" placeholder="1 for first AGM"></div>
     <div><label>AGM Date <span class="req">*</span></label><input type="date" data-f="agmDate"></div>
@@ -256,7 +256,6 @@ const FIELDS = {
     <div><label>Number of shares offered <span class="req">*</span></label><input data-f="offerShares" placeholder="e.g. 10000"></div>
     <div><label>Premium per share (Rs.)</label><input data-f="premium" placeholder="0 = at par"></div>
     <div class="span2"><label>Ratio / basis</label><input data-f="ratio" placeholder="Blank = in proportion to their existing shareholding"></div>
-    <div><label>Second director (signs share certificates)</label><select data-f="dir2Index" data-dirs></select></div>
     <div><label>Date of Letter of Offer <span class="req">*</span></label><input type="date" data-f="offerDate"></div>
     <div><label>Offer open for (days)</label><input type="number" min="1" data-f="offerDays" data-def="15"><div class="hint">Minimum 15 days (shorter only with 90% members' consent)</div></div>
     <div><label>Last date of acceptance <span class="req">*</span></label><input type="date" data-f="lastDate"></div>
@@ -328,7 +327,6 @@ const FIELDS = {
   llp: `<div class="grid">
     <div><label>Financial Year Ended <span class="req">*</span></label><input type="date" data-f="fyEnd"></div>
     <div><label>Partners approved accounts on <span class="req">*</span></label><input type="date" data-f="approveDate"></div>
-    <div><label>Second designated partner (signs)</label><select data-f="dir2Index" data-dirs></select></div>
     <div class="span3"><label>Partners & contribution</label><textarea data-f="partners" placeholder="Blank = taken from the client's directors. Or one per line:  Name | DPIN / PAN | Designated? (Yes/No) | Contribution (Rs.)"></textarea></div>
     <div><label>Turnover for the year (Rs.)</label><input data-f="turnover"></div>
     <div><label>Solvency</label><select data-f="solvent"><option value="yes">Able to pay debts in full</option><option value="no">Not able to pay debts in full</option></select></div>
@@ -357,7 +355,7 @@ PAGES.generate = async params => {
   <div class="card"><h2><span class="step">1</span>Client</h2><div class="grid">
    <div><label>Client (Company) <span class="req">*</span></label><select id="g-client"></select></div>
    <div id="g-cawrap"><label id="g-calabel">Auditor (CA Firm) <span class="req">*</span></label><select id="g-ca"></select></div>
-   <div><label>Signing Director (company documents) <span class="req">*</span></label><select id="g-dir"></select></div></div>
+   <div><label>Signing Director(s) — company documents <span class="req">*</span></label><div id="g-dir" class="dirpick"></div><div class="hint">Tick one or more. Two are needed for the Board's Report, financial statements and share certificates.</div></div></div>
    <div id="g-info" class="hint" style="margin-top:8px"></div></div>
   <div class="card"><h2><span class="step">2</span>Choose Case</h2>${CASE_GROUPS.map(([t, list]) => '<div class="cg-title">' + t + '</div><div class="cases">' + list.map(([k, n, s]) => '<div class="case" data-case="' + k + '"><b>' + n + '</b><span>' + s + '</span></div>').join('') + '</div>').join('')}</div>
   <div class="card hidden" id="g-form"><h2><span class="step">3</span><span id="g-title"></span></h2><div id="g-fields"></div>${COMMON}<h3>Compliance Timeline</h3><div class="timeline" id="g-timeline"></div></div>
@@ -368,9 +366,13 @@ PAGES.generate = async params => {
   $('g-client').innerHTML = '<option value="">— Select client —</option>' + S.clients.map(c => '<option value="' + c.id + '">' + esc(c.name) + '</option>').join('');
   $('g-ca').innerHTML = '<option value="">— Select CA firm —</option>' + S.cas.map(a => '<option value="' + a.id + '">' + esc(a.firm) + ' (' + esc(a.frn) + ')</option>').join('');
   $('g-client').value = G.clientId;
-  $('g-client').onchange = async () => { G.clientId = $('g-client').value; G.dirIndex = 0; await loadFiling(); if ($('g-dir')) paint(); };
+  $('g-client').onchange = async () => { G.clientId = $('g-client').value; G.dirIndex = 0; G.dirIdx = [0]; await loadFiling(); if ($('g-dir')) paint(); };
   $('g-ca').onchange = () => { G.caId = $('g-ca').value; queueSave(); paint(); };
-  $('g-dir').onchange = () => { G.dirIndex = parseInt($('g-dir').value, 10) || 0; queueSave(); paint(); };
+  $('g-dir').onchange = e => {
+    const i = parseInt(e.target.value, 10); if (isNaN(i)) return;
+    G.dirIdx = e.target.checked ? [...G.dirIdx.filter(n => n !== i), i] : G.dirIdx.filter(n => n !== i);
+    G.dirIndex = G.dirIdx[0] || 0; docKey = ''; queueSave(); paint();
+  };
   $$('.case').forEach(el => el.onclick = async () => {
     if (!G.clientId) return toast('Please select a client first.', true);
     G.kase = el.dataset.case; await loadFiling(); if (!$('g-dir')) return; paint(); $('g-form').scrollIntoView({ behavior: 'smooth' });
@@ -387,7 +389,7 @@ PAGES.generate = async params => {
 const client = () => S.clients.find(c => String(c.id) === String(G.clientId));
 const caFirm = () => S.cas.find(a => String(a.id) === String(G.caId));
 const needsCA = k => ['first', 'agm', 'casual', 'annual', 'dpt3', 'stk2'].includes(k);
-const ctx = () => { const c = client() || {}; return { kase: G.kase, c, a: caFirm() || {}, d: (c.directors || [])[G.dirIndex] || {}, f: G.form }; };
+const ctx = () => { const c = client() || {}, ds = G.dirIdx.map(i => (c.directors || [])[i]).filter(Boolean); return { kase: G.kase, c, a: caFirm() || {}, d: ds[0] || {}, ds, f: G.form }; };
 
 async function loadFiling() {
   const c = client(); G.form = {};
@@ -395,12 +397,15 @@ async function loadFiling() {
   let saved = null;
   try { saved = await api('GET', '/api/filings/' + c.id + '/' + G.kase); } catch (e) { fail(e); }
   saved = saved || {};
-  G.form = Object.assign({}, saved); delete G.form.caId; delete G.form.dirIndex;
+  G.form = Object.assign({}, saved); delete G.form.caId; delete G.form.dirIndex; delete G.form.dirIdx;
   if (saved.caId && S.cas.some(a => a.id === saved.caId)) G.caId = String(saved.caId);
-  G.dirIndex = saved.dirIndex && c.directors && c.directors[saved.dirIndex] ? saved.dirIndex : 0;
+  const nd = (c.directors || []).length;
+  G.dirIdx = (Array.isArray(saved.dirIdx) && saved.dirIdx.length ? saved.dirIdx : [saved.dirIndex || 0]).filter(i => i < nd);
+  if (!G.dirIdx.length && nd) G.dirIdx = [0];
+  if (['annual', 'allot', 'llp'].includes(G.kase) && G.dirIdx.length < 2 && nd > 1) G.dirIdx = [G.dirIdx[0] || 0, (G.dirIdx[0] || 0) === 0 ? 1 : 0];
+  G.dirIndex = G.dirIdx[0] || 0;
   if (!G.form.incDate && c.incDate) G.form.incDate = c.incDate;
   try { G.auto = JSON.parse(G.form.autoJson || '{}') || {}; } catch (e) { G.auto = {}; }
-  if (['annual', 'allot', 'llp'].includes(G.kase) && G.form.dir2Index === undefined && c.directors && c.directors.length > 1) G.form.dir2Index = '1';
   docKey = '';
 }
 function autoFill() { if (G.kase === 'agm' && G.form.agmDate && !G.form.fyEnd) { G.form.fyEnd = H.fyStart(G.form.agmDate) + '-03-31'; const el = $$('[data-f="fyEnd"]')[0]; if (el) el.value = G.form.fyEnd; } }
@@ -408,15 +413,15 @@ function queueSave() {
   if (!G.clientId || !G.kase) return;
   clearTimeout(saveTimer); if ($('savedNote')) $('savedNote').textContent = 'Saving…';
   saveTimer = setTimeout(async () => {
-    try { await api('PUT', '/api/filings/' + G.clientId + '/' + G.kase, { form: G.form, caId: G.caId, dirIndex: G.dirIndex }); if ($('savedNote')) $('savedNote').textContent = '✓ Saved for the team'; }
+    try { await api('PUT', '/api/filings/' + G.clientId + '/' + G.kase, { form: G.form, caId: G.caId, dirIndex: G.dirIndex, dirIdx: G.dirIdx }); if ($('savedNote')) $('savedNote').textContent = '✓ Saved for the team'; }
     catch (e) { if ($('savedNote')) $('savedNote').textContent = ''; fail(e); }
   }, 700);
 }
 function dirOptions(c, blank) { return (blank ? '<option value="">— Select —</option>' : '') + (c && c.directors || []).map((d, i) => '<option value="' + i + '">' + esc(d.name) + (d.din ? ' (DIN ' + esc(d.din) + ')' : '') + '</option>').join(''); }
 function paint() {
   const c = client();
-  $('g-dir').innerHTML = c && c.directors && c.directors.length ? dirOptions(c) : '<option value="">— no directors —</option>';
-  $('g-dir').value = String(G.dirIndex); $('g-ca').value = G.caId || '';
+  $('g-dir').innerHTML = c && c.directors && c.directors.length ? c.directors.map((d, i) => { const pos = G.dirIdx.indexOf(i); return '<label class="dirchip' + (pos >= 0 ? ' on' : '') + '"><input type="checkbox" value="' + i + '"' + (pos >= 0 ? ' checked' : '') + '>' + (pos >= 0 ? '<b class="ord">' + (pos + 1) + '</b>' : '') + esc(d.name) + (d.din ? ' <small>(' + esc(d.din) + ')</small>' : '') + '</label>'; }).join('') : '<span class="hint">— no directors in client master —</span>';
+  $('g-ca').value = G.caId || '';
   $('g-cawrap').classList.toggle('hidden', !!G.kase && !needsCA(G.kase));
   $('g-calabel').innerHTML = (G.kase === 'annual' || G.kase === 'dpt3' ? 'Statutory Auditor (CA Firm)' : G.kase === 'stk2' ? 'CA Firm (certifies statement of accounts)' : 'Auditor being appointed (CA Firm)') + ' <span class="req">*</span>';
   if (!S.clients.length) $('g-info').innerHTML = 'No clients yet — <a href="#/clients">add a client</a> first.';
@@ -480,7 +485,7 @@ async function download(ids, zip) {
   try {
     clearTimeout(saveTimer);
     const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
-      body: JSON.stringify({ clientId: G.clientId, caId: G.caId, dirIndex: G.dirIndex, kase: G.kase, form: G.form, docIds: ids, zip }) });
+      body: JSON.stringify({ clientId: G.clientId, caId: G.caId, dirIndex: G.dirIndex, dirIdx: G.dirIdx, kase: G.kase, form: G.form, docIds: ids, zip }) });
     if (r.status === 401) { showAuth(); throw new Error('Please log in again.'); }
     if (!r.ok) { let msg = 'Could not create the documents.'; try { msg = (await r.json()).error || msg; } catch (e) {} throw new Error(msg); }
     const blob = await r.blob(), cd = r.headers.get('content-disposition') || '', name = (/filename="([^"]+)"/.exec(cd) || [])[1] || 'documents';

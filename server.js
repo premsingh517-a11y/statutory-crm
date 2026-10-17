@@ -326,7 +326,8 @@ app.get('/api/filings/:clientId/:kase', requireLogin, async (req, res) => {
   res.json(rows[0] ? rows[0].data : null);
 });
 async function saveFiling(clientId, kase, body, uid) {
-  const data = Object.assign(cleanForm(body.form), { caId: parseInt(body.caId, 10) || null, dirIndex: parseInt(body.dirIndex, 10) || 0 });
+  const dirIdx = (Array.isArray(body.dirIdx) ? body.dirIdx : []).map(n => parseInt(n, 10)).filter(n => n >= 0 && n < 50).slice(0, 15);
+  const data = Object.assign(cleanForm(body.form), { caId: parseInt(body.caId, 10) || null, dirIndex: parseInt(body.dirIndex, 10) || 0, dirIdx });
   await db.query(`INSERT INTO filings (client_id, case_type, data, updated_by) VALUES ($1,$2,$3,$4)
     ON CONFLICT (client_id, case_type) DO UPDATE SET data=EXCLUDED.data, updated_by=EXCLUDED.updated_by, updated_at=now()`, [clientId, kase, data, uid]);
   return data;
@@ -349,9 +350,10 @@ app.post('/api/generate', requireLogin, async (req, res) => {
   if (!cr.rows.length) return bad(res, 'Client not found.', 404);
   const ar = caId ? await db.query('SELECT data FROM cas WHERE id=$1', [caId]) : { rows: [] };
   const c = cr.rows[0].data, a = ar.rows[0] ? ar.rows[0].data : {};
-  const d = (c.directors || [])[parseInt(b.dirIndex, 10) || 0] || {};
+  const idx = (Array.isArray(b.dirIdx) && b.dirIdx.length ? b.dirIdx : [b.dirIndex || 0]).map(n => parseInt(n, 10));
+  const ds = idx.map(i => (c.directors || [])[i]).filter(Boolean), d = ds[0] || {};
   const f = cleanForm(b.form);
-  const ctx = { kase, c, a, d, f };
+  const ctx = { kase, c, a, d, ds, f };
   await saveFiling(clientId, kase, b, req.session.user.id);
   const lhFiles = { company: await letterheadFile('clients', clientId), ca: await letterheadFile('cas', caId) };
 

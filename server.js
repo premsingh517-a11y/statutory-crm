@@ -470,19 +470,29 @@ app.use((err, req, res, next) => {
 });
 
 // Keep the portal running if a single request hits an unexpected error; write it to a log file.
+const LOG_DIR = process.env.LOG_DIR || path.join(__dirname, 'data');
 function logCrash(kind, err) {
   const line = new Date().toISOString() + ' ' + kind + ': ' + (err && err.stack || err) + '\n';
   console.error(line);
-  try { const fs = require('fs'); fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true }); fs.appendFileSync(path.join(__dirname, 'data', 'error.log'), line); } catch (e) {}
+  try { const fs = require('fs'); fs.mkdirSync(LOG_DIR, { recursive: true }); fs.appendFileSync(path.join(LOG_DIR, 'error.log'), line); } catch (e) {}
 }
 process.on('unhandledRejection', e => logCrash('unhandledRejection', e));
 process.on('uncaughtException', e => logCrash('uncaughtException', e));
 
-db.init().then(() => {
-  const server = app.listen(PORT, () => console.log('NeuSource Statutory CRM running on http://localhost:' + PORT));
-  server.on('error', e => {
+// start(port, host) → resolves with the http server; used by `node server.js` and by the desktop app
+function start(port, host) {
+  return db.init().then(() => new Promise((resolve, reject) => {
+    const ready = () => { console.log('NeuSource Statutory CRM running on http://localhost:' + port); resolve(server); };
+    const server = host ? app.listen(port, host, ready) : app.listen(port, ready);
+    server.on('error', reject);
+  }));
+}
+module.exports = { start, logCrash };
+
+if (require.main === module) {
+  start(PORT).catch(e => {
     if (e.code === 'EADDRINUSE') console.error('\nPort ' + PORT + ' is already in use — the portal may already be running in another window. Open http://localhost:' + PORT + '\n');
-    else logCrash('server', e);
+    else logCrash('Startup failed', e);
     process.exit(1);
   });
-}).catch(e => { logCrash('Database setup failed', e); process.exit(1); });
+}

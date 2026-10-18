@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Settings</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<style>
+  :root { --brand:#8A1412; --gold:#E6A65A; --green:#28A745; --ink:#231f20; --muted:#7a7275; --line:#ece6e4; --bg:#faf7f5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  header { background: var(--brand); color: #fff; padding: 16px 22px; }
+  header h1 { margin: 0; font-size: 18px; } header p { margin: 2px 0 0; opacity: .85; font-size: 12.5px; }
+  main { padding: 18px 22px 90px; }
+  .opt { display: block; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px 12px 40px; margin-bottom: 10px; position: relative; cursor: pointer; }
+  .opt input[type=radio] { position: absolute; left: 14px; top: 15px; accent-color: var(--brand); }
+  .opt b { display: block; } .opt small { color: var(--muted); }
+  .opt.on { border-color: var(--brand); box-shadow: 0 0 0 2px #fbeceb; }
+  .more { margin-top: 10px; display: none; } .opt.on .more { display: block; }
+  label.f { display: block; font-weight: 600; font-size: 12.5px; margin: 8px 0 4px; }
+  input[type=text], input[type=number] { width: 100%; padding: 8px 10px; border: 1px solid #d9d1ce; border-radius: 8px; font: inherit; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  h2 { font-size: 14px; color: var(--brand); margin: 18px 0 8px; }
+  .chk { display: flex; gap: 8px; align-items: flex-start; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+  .chk input { accent-color: var(--brand); margin-top: 4px; }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid var(--line); padding: 12px 22px; display: flex; justify-content: space-between; align-items: center; }
+  button { white-space: nowrap; font: inherit; font-weight: 600; border-radius: 8px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--brand); background: var(--brand); color: #fff; }
+  button.ghost { background: #fff; color: var(--brand); }
+  code { background: #f1eeed; padding: 1px 5px; border-radius: 4px; }
+</style></head>
+<body>
+<header><h1>Settings</h1><p>Where the CRM keeps its data. The app restarts after saving.</p></header>
+<main>
+  <label class="opt" data-mode="local"><input type="radio" name="mode" value="local"><b>Data on this computer</b><small>Recommended for one computer, or for the main office PC.</small>
+    <div class="more">
+      <div class="chk"><input type="checkbox" id="lan"><div><b>Allow office PCs to connect</b><br><span class="hint">Other executives on the same office network can use this CRM and its data. Keep this computer on while they work.</span><div id="lanips" class="hint"></div></div></div>
+      <label class="f">Port</label><input type="number" id="port" min="1024" max="65535" style="max-width:140px"><div class="hint">Leave 3000 unless another program uses it.</div>
+    </div></label>
+  <label class="opt" data-mode="client"><input type="radio" name="mode" value="client"><b>Connect to the main office PC</b><small>Use the data kept on another computer in the office that runs this app.</small>
+    <div class="more"><label class="f">Address of the main office PC</label><input type="text" id="serverUrl" placeholder="e.g. http://192.168.1.10:3000">
+      <div class="hint">On the main PC open <b>Team → Team access on office network</b> to see this address.</div></div></label>
+  <label class="opt" data-mode="online"><input type="radio" name="mode" value="online"><b>Online database</b><small>Data in an online PostgreSQL database (e.g. Neon, free). Every PC with this setting sees the same data, from anywhere. Needs internet.</small>
+    <div class="more"><label class="f">Database connection string</label><input type="text" id="databaseUrl" placeholder="postgresql://user:password@host/db?sslmode=require">
+      <div class="hint">From Neon: Dashboard → Connection string. Data on this computer is not moved automatically.</div></div></label>
+  <h2>Downloads</h2>
+  <div class="row"><input type="text" id="downloads" readonly><button class="ghost" id="pick" type="button">Change…</button><button class="ghost" id="reset" type="button">Default</button></div>
+  <div class="hint">Word files and ZIPs are saved here.</div>
+  <p class="hint" id="ver" style="margin-top:18px"></p>
+</main>
+<footer><span class="hint" id="msg"></span><div class="row"><button class="ghost" id="cancel" type="button">Cancel</button><button id="save" type="button">Save &amp; restart</button></div></footer>
+<script>
+  const $ = id => document.getElementById(id);
+  let info;
+  function paintMode(m) { document.querySelectorAll('.opt').forEach(o => { o.classList.toggle('on', o.dataset.mode === m); o.querySelector('input[type=radio]').checked = o.dataset.mode === m; }); }
+  document.querySelectorAll('.opt input[type=radio]').forEach(r => r.addEventListener('change', () => paintMode(r.value)));
+  window.crm.get().then(i => {
+    info = i; const c = i.cfg;
+    paintMode(c.mode || 'local');
+    $('lan').checked = !!c.lan; $('port').value = c.port || 3000; $('serverUrl').value = c.serverUrl || ''; $('databaseUrl').value = c.databaseUrl || '';
+    $('downloads').value = c.downloads || i.downloadsDefault;
+    $('lanips').innerHTML = c.lan && i.lan.length && i.port ? '<br>Address for other PCs: ' + i.lan.map(ip => '<code>http://' + ip + ':' + i.port + '</code>').join(' or ') : '';
+    $('ver').textContent = 'Version ' + i.version + ' · Local data folder: ' + i.dataDir;
+  });
+  $('pick').onclick = async () => { const d = await window.crm.chooseFolder(); if (d) $('downloads').value = d; };
+  $('reset').onclick = () => { $('downloads').value = info.downloadsDefault; };
+  $('cancel').onclick = () => window.close();
+  $('save').onclick = () => {
+    const mode = document.querySelector('input[name=mode]:checked').value;
+    const next = { mode, lan: $('lan').checked, port: $('port').value, serverUrl: $('serverUrl').value.trim(), databaseUrl: $('databaseUrl').value.trim(), downloads: $('downloads').value === info.downloadsDefault ? '' : $('downloads').value };
+    if (mode === 'client' && !next.serverUrl) { $('msg').textContent = 'Enter the address of the main office PC.'; return; }
+    if (mode === 'online' && !/^postgres(ql)?:\/\//i.test(next.databaseUrl)) { $('msg').textContent = 'Enter a connection string starting with postgresql://'; return; }
+    $('msg').textContent = 'Restarting…'; window.crm.save(next);
+  };
+</script>
+</body></html>

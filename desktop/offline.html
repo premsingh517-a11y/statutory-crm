@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Not connected</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+  body { margin: 0; font: 15px/1.55 "Segoe UI", system-ui, sans-serif; background: #faf7f5; color: #231f20; display: grid; place-items: center; min-height: 100vh; }
+  .card { background: #fff; border: 1px solid #ece6e4; border-radius: 14px; padding: 30px 34px; max-width: 520px; box-shadow: 0 8px 30px rgba(0,0,0,.05); }
+  h1 { margin: 0 0 6px; font-size: 20px; color: #8A1412; } p { margin: 8px 0; color: #4a4446; } code { background: #f1eeed; padding: 1px 6px; border-radius: 4px; }
+  button { font: inherit; font-weight: 600; border-radius: 8px; padding: 9px 18px; border: 1px solid #8A1412; background: #8A1412; color: #fff; cursor: pointer; margin-top: 12px; }
+</style></head>
+<body><div class="card">
+  <h1>Could not reach the CRM</h1>
+  <p id="why"></p>
+  <p>Address: <code id="u"></code></p>
+  <button id="retry">Try again</button>
+  <p style="font-size:12.5px;color:#7a7275;margin-top:16px">You can change the connection from <b>File → Settings</b>.</p>
+</div>
+<script>
+  const q = new URLSearchParams(location.search), url = q.get('url') || '';
+  document.getElementById('u').textContent = url;
+  document.getElementById('why').textContent = q.get('mode') === 'client'
+    ? 'The main office PC is not reachable. Check that it is switched on, the CRM app is open there with "Allow office PCs to connect" turned on, and both computers are on the same network.'
+    : 'The CRM did not respond. Click Try again; if it keeps happening, close and reopen the app.';
+  document.getElementById('retry').onclick = () => { location.href = url; };
+</script>
+</body></html>

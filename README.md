@@ -126,3 +126,25 @@ Neon also keeps a short history of your database (see Neon's restore options).
 Document wording follows the Companies Act 2013, the Companies (Audit and Auditors) Rules 2014,
 ICSI Secretarial Standards and ICAI requirements as understood at the time of writing.
 All drafts must be reviewed by a Chartered Accountant / Company Secretary before signing or filing.
+
+
+## Windows software (desktop app)
+
+The same CRM also ships as a Windows program: `NeuSource-Statutory-CRM-Setup-x.y.z.exe`.
+
+- Install it, then open **NeuSource CRM** from the desktop. No browser, no `START.bat`.
+- Data is kept in `%APPDATA%\NeuSource Statutory CRM\pgdata`. A backup is made once a day (last 7 days) in the `backups` folder next to it.
+- Word files and ZIPs are saved to `Downloads\NeuSource CRM`. You can change this in **File → Settings**.
+- **File → Import data from old portal…** copies clients, CA firms, users and templates from the old `statutory-crm\data` folder.
+- **File → Settings** chooses how the app works:
+  - *Data on this computer* (default). Turn on **Allow office PCs to connect** to share it on the office network.
+  - *Connect to the main office PC*: enter the address shown under **Team → Team access on office network** on the main PC.
+  - *Online database*: paste a Neon / PostgreSQL connection string.
+
+Build the installer on Linux (needs Wine with 32-bit support) or on Windows:
+
+```
+bash desktop/build.sh            # writes dist/NeuSource-Statutory-CRM-Setup-<version>.exe
+```
+
+The installer is not code-signed, so Windows SmartScreen shows "Windows protected your PC" the first time. Click **More info → Run anyway**.

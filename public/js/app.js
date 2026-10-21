@@ -346,7 +346,9 @@ PAGES.generate = async params => {
   const wc = client();
   if (!wc) { location.hash = '#/clients'; return; }
   const fys = DC.fyList(wc), okFY = fy => fys.some(z => z.fy === fy && z.ok);
-  if (!okFY(G.fy)) G.fy = okFY(lsGet('nscrm.fy.' + wc.id)) ? lsGet('nscrm.fy.' + wc.id) : okFY(lastFY()) ? lastFY() : ((fys.find(z => z.ok) || {}).fy || lastFY());
+  // next FY to file after the last balance sheet on MCA (e.g. 31/03/2025 → FY 2025-26)
+  const nextFY = wc.lastBsDate ? DC.fyOf(H.addDays(wc.lastBsDate, 1)) : '';
+  if (!okFY(G.fy)) G.fy = okFY(lsGet('nscrm.fy.' + wc.id)) ? lsGet('nscrm.fy.' + wc.id) : okFY(nextFY) ? nextFY : okFY(lastFY()) ? lastFY() : ((fys.find(z => z.ok) || {}).fy || lastFY());
   $('view').innerHTML = `<div class="pagehead"><div><a class="backlink" href="#/clients">← All clients</a><h1>${esc(wc.name)}</h1><p class="sub">${wc.type === 'llp' ? 'LLPIN' : 'CIN'}: ${esc(wc.cin || '—')} · Choose a case, fill the details and download Word files on letterhead.</p></div><div class="row"><span class="saved" id="savedNote"></span><a class="btn ghostlink sm" href="#/clients?edit=${wc.id}">Edit client</a></div></div>
   <div class="card fycard"><h2><span class="step">1</span>Financial Year</h2><div class="row" style="align-items:flex-end;gap:16px;flex-wrap:wrap">
    <div style="min-width:260px"><label>Documents are for the financial year <span class="req">*</span></label><select id="g-fy">${fys.map(z => '<option value="' + z.fy + '"' + (z.ok ? '' : ' disabled') + '>FY ' + z.fy + (z.first ? ' — first FY (from ' + H.sd(z.from) + ')' : '') + (z.ok ? '' : ' — before incorporation') + '</option>').join('')}</select></div>
@@ -365,7 +367,7 @@ PAGES.generate = async params => {
   $('g-ca').onchange = () => { G.caId = $('g-ca').value; queueSave(); paint(); };
   $('g-fy').value = G.fy;
   const fyInfo = () => { const z = fys.find(q => q.fy === G.fy) || {}, agmNo = DC.agmNumber(wc, z.end);
-    $('g-fyinfo').innerHTML = z.end ? 'Period: <b>' + H.sd(z.from) + ' to ' + H.sd(z.end) + '</b>' + (z.first ? ' (first financial year, Sec 2(41))' : '') + ' · AGM for this FY: <b>' + (agmNo ? H.ord(agmNo) + ' AGM' : '—') + '</b>, due by <b>' + H.sd(DC.agmDueOf(wc, z.end)) + '</b>' + (wc.incDate ? '' : ' · <span class="req">Add the date of incorporation in the client master for automatic AGM numbers.</span>') : ''; };
+    $('g-fyinfo').innerHTML = z.end ? 'Period: <b>' + H.sd(z.from) + ' to ' + H.sd(z.end) + '</b>' + (z.first ? ' (first financial year, Sec 2(41))' : '') + ' · AGM for this FY: <b>' + (agmNo ? H.ord(agmNo) + ' AGM' : '—') + '</b>, due by <b>' + H.sd(DC.agmDueOf(wc, z.end)) + '</b>' + (wc.lastBsDate ? ' · Last balance sheet on MCA: <b>' + H.sd(wc.lastBsDate) + '</b>' + (wc.lastAgmDate ? ', last AGM: <b>' + H.sd(wc.lastAgmDate) + '</b>' : '') : '') + (wc.incDate ? '' : ' · <span class="req">Add the date of incorporation in the client master for automatic AGM numbers.</span>') : ''; };
   fyInfo();
   $('g-fy').onchange = async () => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); await flushSave(); G.fy = $('g-fy').value; lsSet('nscrm.fy.' + wc.id, G.fy); fyInfo(); if (G.kase) { await loadFiling(); if (!$('g-dir')) return; } docKey = ''; paint(); };
   $('g-dir').onchange = e => {
@@ -572,10 +574,11 @@ async function saveLH(owner, id, st) {
    ===================================================================== */
 let editClient = null, clientLH = null;
 PAGES.clients = params => {
-  $('view').innerHTML = `<div class="pagehead"><div><h1>Clients</h1><p class="sub">Company master — shared by the whole team. Used on the company letterhead, resolutions and annual filing.</p></div><div class="row"><a class="btn ghostlink" href="/api/import/template">⬇ Excel template</a><button class="gold" id="c-import">⬆ Import from Excel</button><input type="file" id="c-importfile" accept=".xlsx" class="hidden"><button id="c-add">+ Add Client</button></div></div>
+  $('view').innerHTML = `<div class="pagehead"><div><h1>Clients</h1><p class="sub">Company master — shared by the whole team. Used on the company letterhead, resolutions and annual filing.</p></div><div class="row"><a class="btn ghostlink" href="/api/import/template">⬇ Excel template</a><button class="gold" id="c-mca">⬆ Upload MCA Master Data</button><input type="file" id="c-mcafile" accept=".pdf,.xlsx,.xls,application/pdf" class="hidden"><button class="ghost" id="c-import">⬆ Import from Excel</button><input type="file" id="c-importfile" accept=".xlsx" class="hidden"><button id="c-add">+ Add Client</button></div></div>
   <div class="card hidden" id="c-importbox"><h2>Import clients from Excel</h2><p class="hint">Download the template, fill one company per row, then upload it here. Existing clients are matched by CIN.</p>
    <div class="row"><select id="c-importmode" style="max-width:340px"><option value="skip">Skip clients whose CIN already exists</option><option value="update">Update existing clients with the Excel data</option></select><button id="c-importgo">Choose file &amp; import</button><button class="ghost" id="c-importclose">Close</button></div><div id="c-importres" style="margin-top:12px"></div></div>
-  <div class="card hidden" id="c-editor"><h2 id="c-title">Add Client</h2><div class="grid">
+  <div class="card hidden" id="c-mcabox"><div class="row between"><h2 style="margin:0">MCA Master Data</h2><button class="ghost sm" id="c-mcaclose">Close</button></div><div id="c-mcares" style="margin-top:10px"></div></div>
+  <div class="card hidden" id="c-editor"><div class="row between"><h2 id="c-title" style="margin:0">Add Client</h2><button class="ghost sm" id="c-mca2">⬆ Fill from MCA Master Data (PDF / Excel)</button></div><div class="grid" style="margin-top:14px">
    <div class="span2"><label>Company Name <span class="req">*</span></label><input data-c="name" placeholder="As per Certificate of Incorporation"></div>
    <div><label>CIN <span class="req">*</span></label><input data-c="cin" maxlength="21" style="text-transform:uppercase"></div>
    <div><label>Date of Incorporation</label><input type="date" data-c="incDate"></div>
@@ -583,10 +586,14 @@ PAGES.clients = params => {
    <div><label>Small company?</label><select data-c="size"><option value="small">Yes — small company / OPC</option><option value="other">No</option></select><div class="hint">Paid-up ≤ Rs. 4 crore and turnover ≤ Rs. 40 crore — verify current limits</div></div>
    <div><label>PAN</label><input data-c="pan" maxlength="10" style="text-transform:uppercase"></div>
    <div><label>Last AGM number</label><input type="number" min="1" data-c="lastAgmNo" placeholder="For AGM numbering"></div><div><label>Last AGM date</label><input type="date" data-c="lastAgmDate"></div>
+   <div><label>Last Balance Sheet filed with ROC (date)</label><input type="date" data-c="lastBsDate"><div class="hint">“Date of Balance Sheet” on MCA — the next FY to file follows it</div></div>
+   <div><label>ROC</label><input data-c="roc" placeholder="e.g. ROC Delhi"></div>
+   <div><label>Section 8 company?</label><select data-c="sec8"><option value="no">No</option><option value="yes">Yes — licensed under Sec 8 (not-for-profit)</option></select></div>
+   <div><label>Status on MCA</label><input data-c="mcaStatus" placeholder="Active"></div>
    <div class="span3"><label>Registered Office Address <span class="req">*</span></label><textarea data-c="addr"></textarea></div>
    <div><label>Email</label><input type="email" data-c="email"></div><div><label>Phone</label><input data-c="phone"></div><div><label>Website</label><input data-c="web" placeholder="Used for the annual return web link"></div>
    ${logoField('c-logo')}${lhField('c-lh', 'company letterhead')}</div>
-   <h3>Directors</h3><div class="dirrow hint" style="font-weight:600"><span>Name</span><span>DIN</span><span>Designation</span><span>Signature image</span><span></span></div><div id="c-dirs"></div>
+   <h3>Directors</h3><div class="dirrow hint" style="font-weight:600"><span>Name</span><span>DIN</span><span>Appointed on</span><span>Designation</span><span>Signature image</span><span></span></div><div id="c-dirs"></div>
    <button class="ghost sm" id="c-adddir">+ Add Director</button>
    <h3>Share Capital &amp; Shareholders <small class="hint">(for MGT-7 / 7A)</small></h3><div class="grid">
    <div><label>Authorised capital (Rs.)</label><input data-c="authCap"></div><div><label>Paid-up capital (Rs.)</label><input data-c="paidCap"></div><div><label>Face value per share (Rs.)</label><input data-c="faceValue" placeholder="10"></div></div>
@@ -596,6 +603,10 @@ PAGES.clients = params => {
    <div class="row" style="margin-top:18px"><button id="c-save">Save Client</button><button class="ghost" id="c-cancel">Cancel</button></div></div>
   <div class="card"><div class="row between" style="margin-bottom:10px"><b id="c-count"></b><input class="search" id="c-search" placeholder="Search name or CIN…"></div><div id="c-list"></div></div>`;
   $('c-add').onclick = () => openClient(null);
+  $('c-mca').onclick = () => $('c-mcafile').click();
+  $('c-mcaclose').onclick = () => $('c-mcabox').classList.add('hidden');
+  $('c-mca2').onclick = () => { mcaIntoEditor = true; $('c-mcafile').click(); };
+  $('c-mcafile').onchange = async e => { const file = e.target.files[0]; e.target.value = ''; const intoEditor = mcaIntoEditor; mcaIntoEditor = false; if (file) await importMaster(file, intoEditor); };
   $('c-import').onclick = () => { $('c-importbox').classList.remove('hidden'); $('c-importres').innerHTML = ''; };
   $('c-importclose').onclick = () => $('c-importbox').classList.add('hidden');
   $('c-importgo').onclick = () => $('c-importfile').click();
@@ -624,10 +635,11 @@ PAGES.clients = params => {
 };
 function addDirRow(d) {
   const r = document.createElement('div'); r.className = 'dirrow'; r._sign = d.sign || null;
-  r.innerHTML = '<input placeholder="Director name" data-d="name"><input placeholder="DIN (8 digits)" maxlength="8" data-d="din"><select data-d="desig"><option>Director</option><option>Additional Director</option><option>Managing Director</option><option>Whole-time Director</option><option>Nominee Director</option></select>'
+  r.innerHTML = '<input placeholder="Director name" data-d="name"><input placeholder="DIN (8 digits)" maxlength="8" data-d="din"><input type="date" data-d="appt" title="Date of appointment"><select data-d="desig"><option>Director</option><option>Additional Director</option><option>Managing Director</option><option>Whole-time Director</option><option>Nominee Director</option></select>'
     + '<div class="sigbox"><label class="btn ghost sm filebtn">Upload sign<input type="file" accept="image/png,image/jpeg" hidden></label><img class="sig-prev hidden" alt="signature"><button type="button" class="danger sm hidden" title="Remove signature">✕ sign</button></div>'
     + '<button type="button" class="danger sm" title="Remove director">✕</button>';
-  r.querySelector('[data-d=name]').value = d.name || ''; r.querySelector('[data-d=din]').value = d.din || ''; r.querySelector('[data-d=desig]').value = d.desig || 'Director';
+  r.querySelector('[data-d=name]').value = d.name || ''; r.querySelector('[data-d=din]').value = d.din || ''; r.querySelector('[data-d=desig]').value = d.desig || 'Director'; r.querySelector('[data-d=appt]').value = d.appt || '';
+  const ds = r.querySelector('[data-d=desig]'); if (d.desig && ![...ds.options].some(o => o.value === d.desig)) { ds.insertAdjacentHTML('beforeend', '<option>' + esc(d.desig) + '</option>'); ds.value = d.desig; }
   const img = r.querySelector('.sig-prev'), del = r.querySelector('.sigbox button');
   const show = () => { img.classList.toggle('hidden', !r._sign); del.classList.toggle('hidden', !r._sign); if (r._sign) img.src = r._sign.data; };
   r.querySelector('.sigbox input').onchange = e => readImage(e.target, 500, s => { r._sign = s; show(); });
@@ -641,11 +653,94 @@ function addShRow(h) {
   ['name', 'folio', 'shares'].forEach(k => { r.querySelector('[data-s=' + k + ']').value = h[k] || ''; }); r.querySelector('[data-s=cat]').value = h.cat || 'Promoter';
   r.lastElementChild.onclick = () => r.remove(); $('c-shs').appendChild(r);
 }
+/* ---------- MCA master data (PDF / Excel) ---------- */
+let mcaIntoEditor = false;
+function loadScript(src) { return new Promise((res, rej) => { if (document.querySelector('script[src="' + src + '"]')) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src)); document.head.appendChild(s); }); }
+const mcaMsg = (html, cls) => { $('c-mcabox').classList.remove('hidden'); $('c-mcares').innerHTML = '<div class="note' + (cls ? ' ' + cls : '') + '">' + html + '</div>'; };
+async function pdfToText(file, progress) {
+  await loadScript('/vendor/pdfjs/pdf.min.js');
+  const pdfjs = window.pdfjsLib; pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js';
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  let text = '';
+  for (let i = 1; i <= pdf.numPages; i++) text += McaMaster.linesFromPdfItems((await (await pdf.getPage(i)).getTextContent()).items) + '\n';
+  if (/\b(CIN|LLPIN)\b[\s\S]*\d{4}/.test(text) && text.replace(/\s/g, '').length > 200) return { text, ocr: false };
+  // scanned / "Print to PDF" file: read the pages with OCR (runs on this computer, no internet needed)
+  await loadScript('/vendor/tesseract/tesseract.min.js');
+  const worker = await Tesseract.createWorker('eng', 1, { workerPath: '/vendor/tesseract/worker.min.js', corePath: '/vendor/tesseract/core', langPath: '/vendor/tesseract/lang', gzip: true,
+    logger: m => { if (m.status === 'recognizing text' && progress) progress(Math.round(m.progress * 100)); } });
+  await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
+  text = '';
+  try {
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i), vp = page.getViewport({ scale: 2.8 }), cv = document.createElement('canvas');
+      cv.width = vp.width; cv.height = vp.height; const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+      await page.render({ canvasContext: g, viewport: vp }).promise;
+      if (progress) progress(0, i, pdf.numPages);
+      text += (await worker.recognize(cv)).data.text + '\n';
+    }
+  } finally { await worker.terminate(); }
+  return { text, ocr: true };
+}
+async function readMaster(file) {
+  const name = file.name.toLowerCase();
+  if (/\.xlsx?$/.test(name)) {
+    const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(file); });
+    return Object.assign(await api('POST', '/api/mca/parse', { name: file.name, data }), { source: 'Excel' });
+  }
+  if (!/\.pdf$/.test(name)) throw new Error('Choose the MCA master data as PDF or Excel (.xlsx).');
+  let page = 1, pages = 1;
+  const { text, ocr } = await pdfToText(file, (pct, i, n) => { if (i) { page = i; pages = n; } mcaMsg('Reading the PDF' + (pages > 1 ? ' — page ' + page + ' of ' + pages : '') + '… ' + (pct ? pct + '%' : '') + '<br><small>Scanned PDF — reading the text on this computer (OCR). This takes a few seconds.</small>'); });
+  const m = McaMaster.fromText(text);
+  if (ocr) m.notes = ['Read by OCR from a scanned PDF — check the spelling of names, the email address and the numbers before saving.', ...(m.notes || [])];
+  return Object.assign(m, { source: ocr ? 'PDF (OCR)' : 'PDF' });
+}
+async function importMaster(file, intoEditor) {
+  mcaMsg('Reading ' + esc(file.name) + '…');
+  let m;
+  try { m = await readMaster(file); } catch (e) { return mcaMsg(esc(e.message || 'Could not read the file.'), 'red'); }
+  if (!m.cin && !m.name) return mcaMsg('No company details were found in this file. Upload the “Master Data” page downloaded from the MCA website (PDF or Excel).', 'red');
+  // open the matching client (same CIN) or a new one, then fill the form
+  const open = !$('c-editor').classList.contains('hidden');
+  if (!(intoEditor && open)) {
+    const ex = S.clients.find(c => (c.cin || '').toUpperCase() === m.cin);
+    openClient(ex || null);
+  }
+  const filled = applyMaster(m);
+  const ex = editClient && editClient.id;
+  mcaMsg('<b>✓ ' + esc(m.name || m.cin) + '</b> — read from ' + esc(m.source) + '. ' + (ex ? 'Existing client updated in the form below.' : 'New client filled in the form below.') + ' Check and click <b>Save Client</b>.'
+    + '<br><small>Filled: ' + esc(filled.join(', ')) + '</small>'
+    + (m.ceased && m.ceased.length ? '<br><small>Ceased (not added): ' + esc(m.ceased.map(d => d.name + ' — ' + H.sd(d.cessation)).join('; ')) + '</small>' : '')
+    + (m.notes || []).map(n => '<div class="hint" style="color:var(--red)">⚠ ' + esc(n) + '</div>').join(''), 'green');
+  $('c-editor').scrollIntoView({ behavior: 'smooth' });
+}
+function applyMaster(m) {
+  const filled = [], put = (k, val, label) => { const el = $$('[data-c="' + k + '"]')[0]; if (!el || val === undefined || val === null || val === '') return; el.value = val; el.classList.add('autofill'); filled.push(label); };
+  put('name', m.name, 'name'); put('cin', m.cin, 'CIN'); put('incDate', m.incDate, 'incorporation date'); put('type', m.type, 'type'); put('size', m.size, 'small company');
+  put('addr', m.addr, 'registered office'); put('email', m.email, 'email'); put('authCap', m.authCap, 'authorised capital'); put('paidCap', m.paidCap, 'paid-up capital');
+  put('lastAgmDate', m.lastAgmDate, 'last AGM date'); put('lastBsDate', m.lastBsDate, 'last balance sheet'); put('roc', m.roc, 'ROC'); put('sec8', m.sec8, 'Section 8'); put('mcaStatus', m.mcaStatus, 'status');
+  if (m.csName) put('csName', m.csName, 'company secretary');
+  // last AGM number: AGM for the FY of the last balance sheet, counted from incorporation (all AGMs on time)
+  const bs = m.lastBsDate || (m.lastAgmDate ? (+m.lastAgmDate.slice(5, 7) >= 4 ? m.lastAgmDate.slice(0, 4) : +m.lastAgmDate.slice(0, 4) - 1) + '-03-31' : '');
+  const no = DC.agmNumber({ incDate: m.incDate }, bs); if (no) put('lastAgmNo', no, 'last AGM number');
+  // directors: update by DIN, add new ones, keep signatures already uploaded
+  const rows = $$('#c-dirs .dirrow'), val = (r, k) => r.querySelector('[data-d=' + k + ']').value.trim();
+  rows.filter(r => !val(r, 'name') && !val(r, 'din')).forEach(r => r.remove());
+  (m.directors || []).concat(m.type === 'llp' ? [] : []).forEach(d => {
+    const r = $$('#c-dirs .dirrow').find(x => (d.din && val(x, 'din') === d.din) || val(x, 'name').toLowerCase() === d.name.toLowerCase());
+    if (r) { if (d.din) r.querySelector('[data-d=din]').value = d.din; if (d.appt) r.querySelector('[data-d=appt]').value = d.appt; if (!val(r, 'name')) r.querySelector('[data-d=name]').value = d.name; }
+    else addDirRow({ name: d.name, din: d.din, desig: d.desig, appt: d.appt });
+  });
+  if ((m.directors || []).length) filled.push((m.directors || []).length + ' director(s)');
+  const inMca = new Set((m.directors || []).map(d => d.din).filter(Boolean));
+  const extra = $$('#c-dirs .dirrow').filter(r => val(r, 'din') && inMca.size && !inMca.has(val(r, 'din'))).map(r => val(r, 'name'));
+  if (extra.length) (m.notes = m.notes || []).push('Not on the MCA list (ceased?): ' + extra.join(', ') + ' — remove if no longer a director.');
+  return filled;
+}
 function openClient(c) {
   editClient = c ? Object.assign({}, c) : { logo: null };
   clientLH = { current: c ? c.lhName : null, pending: null, remove: false };
   $('c-title').textContent = c ? 'Edit Client' : 'Add Client';
-  $$('[data-c]').forEach(el => { el.value = c ? (c[el.dataset.c] ?? '') : (el.tagName === 'SELECT' ? el.options[0].value : ''); });
+  $$('[data-c]').forEach(el => { el.classList.remove('autofill'); el.value = c ? (c[el.dataset.c] ?? '') : (el.tagName === 'SELECT' ? el.options[0].value : ''); if (el.tagName === 'SELECT' && !el.value) el.value = el.options[0].value; });
   $('c-dirs').innerHTML = ''; ((c && c.directors && c.directors.length) ? c.directors : [{}, {}]).forEach(addDirRow);
   $('c-shs').innerHTML = ''; (c && c.shareholders || []).forEach(addShRow);
   bindLogo('c-logo', () => editClient.logo, l => { editClient.logo = l; });
@@ -656,7 +751,7 @@ async function saveClient() {
   const c = { logo: editClient.logo };
   $$('[data-c]').forEach(el => { c[el.dataset.c] = el.value.trim(); });
   c.cin = c.cin.toUpperCase(); c.pan = c.pan.toUpperCase();
-  c.directors = $$('#c-dirs .dirrow').map(r => ({ name: r.querySelector('[data-d=name]').value.trim(), din: r.querySelector('[data-d=din]').value.trim(), desig: r.querySelector('[data-d=desig]').value, sign: r._sign || null })).filter(d => d.name);
+  c.directors = $$('#c-dirs .dirrow').map(r => ({ name: r.querySelector('[data-d=name]').value.trim(), din: r.querySelector('[data-d=din]').value.trim(), desig: r.querySelector('[data-d=desig]').value, appt: r.querySelector('[data-d=appt]').value, sign: r._sign || null })).filter(d => d.name);
   c.shareholders = $$('#c-shs .shrow').map(r => ({ name: r.querySelector('[data-s=name]').value.trim(), folio: r.querySelector('[data-s=folio]').value.trim(), shares: r.querySelector('[data-s=shares]').value.trim(), cat: r.querySelector('[data-s=cat]').value })).filter(h => h.name);
   const miss = []; if (!c.name) miss.push('Company Name'); if (!c.cin) miss.push('CIN'); if (!c.addr) miss.push('Registered Office'); if (!c.directors.length) miss.push('at least one Director');
   if (miss.length) return toast('Please fill: ' + miss.join(', '), true);
@@ -675,7 +770,7 @@ function listClients() {
   const list = S.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (c.cin || '').toLowerCase().includes(q));
   $('c-count').textContent = S.clients.length + ' client' + (S.clients.length === 1 ? '' : 's');
   $('c-list').innerHTML = list.length ? '<table class="tbl"><tr><th>Company</th><th>CIN</th><th class="hide-m">Directors</th><th class="hide-m">Last updated</th><th></th></tr>' + list.map(c =>
-    '<tr><td><a class="clink" href="#/generate?client=' + c.id + '"><b>' + esc(c.name) + '</b></a>' + (c.lhName ? ' <span class="pill green">Word letterhead</span>' : '') + '<br><small class="hint">' + esc(H.oneLine(c.addr)) + '</small></td><td>' + esc(c.cin) + (c.incDate ? '<br><small class="hint">Inc. ' + H.sd(c.incDate) + '</small>' : '') + '</td><td class="hide-m">' + (c.directors || []).map(d => esc(d.name) + (d.din ? ' <small class="hint">(' + esc(d.din) + ')</small>' : '') + (d.sign ? ' <small class="hint">✍</small>' : '')).join('<br>') + '</td><td class="hide-m"><small class="hint">' + (c.updatedBy ? esc(c.updatedBy) + '<br>' : '') + new Date(c.updatedAt).toLocaleDateString('en-IN') + '</small></td><td class="actions"><button class="sm" data-gen="' + c.id + '">Open &amp; prepare docs</button> <button class="ghost sm" data-edit="' + c.id + '">Edit</button>' + (isAdmin() ? ' <button class="danger sm" data-del="' + c.id + '">Delete</button>' : '') + '</td></tr>').join('') + '</table>'
+    '<tr><td><a class="clink" href="#/generate?client=' + c.id + '"><b>' + esc(c.name) + '</b></a>' + (c.lhName ? ' <span class="pill green">Word letterhead</span>' : '') + (c.sec8 === 'yes' ? ' <span class="pill brand">Sec 8</span>' : '') + (c.mcaStatus && !/^active$/i.test(c.mcaStatus) ? ' <span class="pill red">' + esc(c.mcaStatus) + '</span>' : '') + '<br><small class="hint">' + esc(H.oneLine(c.addr)) + '</small></td><td>' + esc(c.cin) + (c.incDate ? '<br><small class="hint">Inc. ' + H.sd(c.incDate) + '</small>' : '') + '</td><td class="hide-m">' + (c.directors || []).map(d => esc(d.name) + (d.din ? ' <small class="hint">(' + esc(d.din) + ')</small>' : '') + (d.sign ? ' <small class="hint">✍</small>' : '')).join('<br>') + '</td><td class="hide-m"><small class="hint">' + (c.updatedBy ? esc(c.updatedBy) + '<br>' : '') + new Date(c.updatedAt).toLocaleDateString('en-IN') + '</small></td><td class="actions"><button class="sm" data-gen="' + c.id + '">Open &amp; prepare docs</button> <button class="ghost sm" data-edit="' + c.id + '">Edit</button>' + (isAdmin() ? ' <button class="danger sm" data-del="' + c.id + '">Delete</button>' : '') + '</td></tr>').join('') + '</table>'
     : '<div class="empty">' + (q ? 'No client matches your search.' : 'No clients yet. Click “+ Add Client”.') + '</div>';
   $$('#c-list [data-edit]').forEach(b => b.onclick = () => openClient(S.clients.find(c => String(c.id) === b.dataset.edit)));
   $$('#c-list [data-gen]').forEach(b => b.onclick = () => { location.hash = '#/generate?client=' + b.dataset.gen; });

@@ -36,6 +36,7 @@ gold background and can be changed; changing one date updates the dates that dep
 - **AGM number** is worked out from the date of incorporation, assuming every AGM was held on time.
 - **Board meetings per FY** are filled automatically (first meeting within 30 days of incorporation, the accounts meeting before the AGM, quarterly reviews, gap ≤ 120 days) and used in the Board's Report and MGT-7.
 - **Yearly Records** case: notices and minutes of all Board meetings, attendance register, AGM minutes, MBP-1 and DIR-8 for each director, MGT-1, Register of Directors & KMP, MBP-2 and MBP-4 for the chosen FY.
+- **Upload MCA Master Data** (Clients page or inside the client form): the PDF or Excel downloaded from the MCA website fills the name, CIN, incorporation date, type, Section 8, small company, registered office, email, capital, ROC, status, last AGM date, last balance sheet date, last AGM number and directors with DIN and appointment date. Scanned PDFs are read with OCR on the computer itself (no internet). The workspace then starts at the next FY to file.
 - **CA partner signature:** upload it in CA Firms; it is printed on CA documents.
 - **Edit Templates** (admin): change the wording of any document per case and option, with `{{placeholders}}` filled from the client, CA firm and case details. "Reset to standard" brings back the built-in wording.
 - Preview every document before downloading. Download one Word file, or all of them in a ZIP.

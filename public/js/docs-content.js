@@ -1169,7 +1169,7 @@
       { p: 'REGISTER OF DIRECTORS AND KEY MANAGERIAL PERSONNEL AND THEIR SHAREHOLDING', b: true, al: 'c' }, { p: '[Pursuant to Section 170(1) of the Companies Act, 2013 and Rule 17 of the Companies (Appointment and Qualification of Directors) Rules, 2014]', al: 'c', sz: 20 },
       { p: c.name + ' (CIN: ' + v(c.cin) + ')', al: 'c', b: true },
       { tbl: [['S. No.', 'DIN / PAN', 'Full name', 'Father’s / spouse’s name', 'Residential address', 'Date of birth', 'Nationality', 'Occupation', 'Designation', 'Date of appointment', 'Date of cessation', 'Shares held', 'Remarks'],
-        ...(c.directors || []).map((d, i) => { const h = (c.shareholders || []).find(s => s.name && d.name && s.name.toLowerCase() === d.name.toLowerCase()); return [String(i + 1), d.din || '', d.name, '', '', '', 'Indian', '', d.desig || 'Director', '', '', h ? inr(num(h.shares)) : '', '']; }),
+        ...(c.directors || []).map((d, i) => { const h = (c.shareholders || []).find(s => s.name && d.name && s.name.toLowerCase() === d.name.toLowerCase()); return [String(i + 1), d.din || '', d.name, '', '', '', 'Indian', '', d.desig || 'Director', d.appt ? sd(d.appt) : '', '', h ? inr(num(h.shares)) : '', '']; }),
         ...(c.csName ? [[String((c.directors || []).length + 1), '', c.csName, '', '', '', 'Indian', '', 'Company Secretary (' + (c.csMno || '') + ')', '', '', '', '']] : [])], cols: [4, 8, 11, 10, 14, 7, 6, 7, 8, 7, 6, 6, 6], head: true },
       stmtNote('Columns not available in the portal are left blank — complete them from DIR-2 / DIR-12 records.')] }];
   }
@@ -1443,10 +1443,12 @@
     const force = (k, val) => { if (!val) return; forced[k] = true; if (f[k] !== val) { f[k] = val; out[k] = val; } };
     const fyEnd = ctx.fy ? fyEndOf(ctx.fy) : '';
     if (fyEnd && FY_CASES.includes(x.kase)) force('fyEnd', fyEnd);
+    // actual AGM date from the MCA master data (Date of last AGM, for the FY of the last balance sheet)
+    const mcaAgm = end => (c.lastAgmDate && c.lastBsDate && end && c.lastBsDate === end) ? c.lastAgmDate : '';
     const agmBlock = () => {
       set('fyEnd', lastFYEnd());
       set('agmNo', agmNumber(c, f.fyEnd));
-      set('agmDate', defAgmDate(c, f.fyEnd));
+      set('agmDate', mcaAgm(f.fyEnd) || defAgmDate(c, f.fyEnd));
       set('agmNotice', defAgmNotice(f.agmDate));
       set('bmDate', workday(addDays(f.agmNotice, -1)));
       set('bmNotice', defBmNotice(f.bmDate));
@@ -1457,7 +1459,7 @@
       case 'agm': agmBlock(); set('consentDate', addDays(f.bmDate, -3)); break;
       case 'casual': set('bmDate', addDays(f.vacDate, 20)); set('bmNotice', addDays(f.bmDate, -8)); set('consentDate', addDays(f.bmDate, -3)); if (f.reason !== 'other') egm(f.bmDate); break;
       case 'annual': agmBlock(); set('coSize', c.size === 'other' ? 'other' : 'small');
-        set('bmList', yl.bmList || dmyList(fyMeetings(c, f.fyEnd, { count: yl.bmCount, accounts: pa.bmDate, prevAgm: pa.agmDate }))); break;
+        set('bmList', yl.bmList || dmyList(fyMeetings(c, f.fyEnd, { count: yl.bmCount, accounts: pa.bmDate, prevAgm: pa.agmDate || mcaAgm(addMonths(f.fyEnd, -12)) }))); break;
       case 'dirapp': set('bmNotice', addDays(f.bmDate, -8)); set('consentDate', addDays(f.bmDate, -1)); egm(f.bmDate); break;
       case 'dirres': set('resReceipt', f.resLetter); set('bmDate', addDays(f.resReceipt, 8)); set('bmNotice', f.resReceipt); break;
       case 'allot': set('bmNotice', addDays(f.bmDate, -8)); set('offerDate', addDays(f.bmDate, 1)); set('offerDays', '15'); set('lastDate', addDays(f.offerDate, num(f.offerDays) || 15)); set('alDate', addDays(f.lastDate, 2)); set('alTime', '11:00'); set('alNotice', addDays(f.alDate, -8)); break;
@@ -1478,7 +1480,7 @@
         set('bmCount', c.type === 'opc' ? '2' : '4'); set('coSize', c.size === 'other' ? 'other' : 'small');
         if (!first && f.fyEnd) {
           set('prevAgmNo', pa.agmNo || agmNumber(c, prevEnd));
-          set('agmDate', pa.agmDate || defAgmDate(c, prevEnd));
+          set('agmDate', pa.agmDate || mcaAgm(prevEnd) || defAgmDate(c, prevEnd));
           set('accBm', pa.bmDate || defAccountsBM(f.agmDate));
         }
         set('bmList', dmyList(fyMeetings(c, f.fyEnd, { count: f.bmCount, accounts: f.accBm })));

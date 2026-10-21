@@ -94,7 +94,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .case.sel{border-color:var(--brand);background:var(--brand-ll)}
 .case b{display:block;font-size:14.5px;margin-bottom:3px}
 .case span{font-size:12.5px;color:var(--muted)}
-.dirrow{display:grid;grid-template-columns:1.5fr 1fr 1.1fr 1.4fr 40px;gap:8px;margin-bottom:8px;align-items:center}
+.dirrow{display:grid;grid-template-columns:1.5fr 0.9fr 1fr 1.1fr 1.4fr 40px;gap:8px;margin-bottom:8px;align-items:center}
 .shrow{display:grid;grid-template-columns:2fr 1fr 1fr 1.2fr 40px;gap:8px;margin-bottom:8px;align-items:center}
 .sigbox{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sig-prev{max-height:38px;max-width:120px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:2px}

@@ -52,13 +52,13 @@ function cleanLogo(l) {
   if (!(w > 0 && h > 0)) return null;
   return { data: l.data, w, h };
 }
-const CLIENT_FIELDS = ['name', 'cin', 'incDate', 'type', 'pan', 'addr', 'email', 'phone', 'web', 'csName', 'csMno', 'authCap', 'paidCap', 'faceValue', 'size', 'lastAgmNo', 'lastAgmDate'];
+const CLIENT_FIELDS = ['name', 'cin', 'incDate', 'type', 'pan', 'addr', 'email', 'phone', 'web', 'csName', 'csMno', 'authCap', 'paidCap', 'faceValue', 'size', 'lastAgmNo', 'lastAgmDate', 'lastBsDate', 'roc', 'sec8', 'mcaStatus'];
 function cleanClient(b) {
   const c = {};
   CLIENT_FIELDS.forEach(k => { c[k] = str(b[k], k === 'addr' ? 600 : 200); });
   c.cin = c.cin.toUpperCase(); c.pan = c.pan.toUpperCase();
   c.directors = (Array.isArray(b.directors) ? b.directors : []).slice(0, 15)
-    .map(d => ({ name: str(d && d.name, 120), din: str(d && d.din, 8), desig: str(d && d.desig, 60) || 'Director', sign: cleanLogo(d && d.sign) }))
+    .map(d => ({ name: str(d && d.name, 120), din: str(d && d.din, 8), desig: str(d && d.desig, 60) || 'Director', appt: /^\d{4}-\d{2}-\d{2}$/.test(str(d && d.appt, 10)) ? str(d.appt, 10) : '', sign: cleanLogo(d && d.sign) }))
     .filter(d => d.name);
   c.shareholders = (Array.isArray(b.shareholders) ? b.shareholders : []).slice(0, 200)
     .map(h => ({ name: str(h && h.name, 160), folio: str(h && h.folio, 30), shares: str(h && h.shares, 20), cat: str(h && h.cat, 40) }))
@@ -268,6 +268,21 @@ app.delete('/api/templates/:kase/:docId', requireAdmin, async (req, res) => {
   await db.query('DELETE FROM templates WHERE case_type=$1 AND variant=$2 AND doc_id=$3', [req.params.kase, String(req.query.variant || ''), req.params.docId]);
   db.log(req.session.user.id, 'template.reset', DC.CASE_SHORT[req.params.kase] + ' — ' + req.params.docId);
   res.json({ ok: true });
+});
+
+/* ---------------- MCA master data (Excel) → client fields ---------------- */
+const MCA = require('./public/js/mca-parse.js');
+app.post('/api/mca/parse', requireLogin, async (req, res) => {
+  const b = req.body || {};
+  if (typeof b.text === 'string') return res.json(MCA.fromText(b.text.slice(0, 200000)));
+  if (typeof b.data !== 'string' || b.data.length > 8 * 1024 * 1024) return bad(res, 'Upload the MCA master data Excel file.');
+  const ExcelJS = require('exceljs'), wb = new ExcelJS.Workbook();
+  try { await wb.xlsx.load(Buffer.from(b.data, 'base64')); } catch (e) { return bad(res, 'This is not a valid Excel (.xlsx) file. Download the master data again from MCA, or upload the PDF.'); }
+  const rows = [];
+  wb.eachSheet(ws => ws.eachRow({ includeEmpty: false }, r => { const a = []; r.eachCell({ includeEmpty: true }, c => a.push(c.text == null ? '' : String(c.text))); rows.push(a); }));
+  const m = MCA.fromRows(rows);
+  if (!m.cin && !m.name) return bad(res, 'No company details found. Upload the “Master Data” Excel downloaded from the MCA website.');
+  res.json(m);
 });
 
 /* ---------------- Excel import of clients ---------------- */

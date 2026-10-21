@@ -39,7 +39,20 @@
   const oneLine = s => String(s || '').replace(/\s*\n\s*/g, ', ').trim();
   const fyStart = s => { const d = pd(s); if (!d) return null; return d.getUTCMonth() >= 3 ? d.getUTCFullYear() : d.getUTCFullYear() - 1; };
   // Sec 2(41): first FY ends on the 31st March after incorporation (incorporated on/after 1 Jan → 31st March of the following year)
-  const firstFYEnd = inc => { const y = yr(inc); if (!y) return ''; const d = pd(inc); return (d.getUTCMonth() >= 3 ? y + 1 : y + 1) + '-03-31'; };
+  const firstFYEnd = (inc, llp) => { const y = yr(inc); if (!y) return ''; const m = pd(inc).getUTCMonth() + 1; return (llp && m >= 10 ? y + 2 : y + 1) + '-03-31'; };
+  // LLP Act Sec 2(1)(l): an LLP incorporated after 30th September may close its first FY on 31st March of the following year
+  const firstEnd = c => c && c.incDate ? firstFYEnd(c.incDate, c.type === 'llp') : '';
+  /* ---------- entity type: private / public / OPC / Section 8 / LLP ---------- */
+  function entity(c) {
+    c = c || {};
+    const llp = c.type === 'llp', opc = c.type === 'opc', pub = c.type === 'public', sec8 = c.sec8 === 'yes' && !llp && !opc;
+    return { llp, opc, pub, sec8, pvt: !llp && !opc && !pub,
+      key: llp ? 'llp' : opc ? 'opc' : sec8 ? 'sec8' : pub ? 'pub' : 'pvt',
+      label: llp ? 'Limited Liability Partnership' : opc ? 'One Person Company' : (sec8 ? 'Section 8 ' : '') + (pub ? 'public company' : 'private company'),
+      minDirs: llp ? 2 : opc ? 1 : pub ? 3 : 2,           // Sec 149(1); LLP Sec 7: two designated partners
+      noticeDays: sec8 ? 14 : 21,                          // Sec 101(1) as modified for Sec 8 companies (MCA notification 05.06.2015)
+      canBeSmall: !pub && !sec8 && !llp };                 // Sec 2(85): small company excludes public and Sec 8 companies
+  }
   const lines = s => String(s || '').split('\n').map(l => l.trim()).filter(Boolean);
   const cells = (s, n) => lines(s).map(l => { const p = l.split('|').map(t => t.trim()); while (p.length < n) p.push(''); return p.slice(0, n); });
   const parseDMY = s => { s = String(s || '').trim(); let m = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/.exec(s); if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'); m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); return m ? s : ''; };
@@ -110,10 +123,16 @@
     x.appDate = x.kase === 'dirapp' ? (x.egmApp ? f.egmDate : f.bmDate) : '';
     x.resEff = x.kase === 'dirres' ? (f.resEffDate && f.resReceipt && f.resEffDate > f.resReceipt ? f.resEffDate : (f.resReceipt || f.resEffDate || '')) : '';
     // annual filing
-    x.small = f.coSize !== 'other';
+    x.E = entity(x.c);
+    x.small = x.E.opc ? true : !x.E.canBeSmall ? false : f.coSize !== 'other';
+    x.PL = x.E.sec8 ? 'the Income and Expenditure Account' : 'the Statement of Profit and Loss'; // Sec 2(40)(ii): not-for-profit companies
+    x.surplus = x.E.sec8 ? 'surplus / (deficit)' : 'profit / (loss)';
+    x.rot = x.E.pub ? (dirs[parseInt(f.rotIdx, 10)] || {}) : {}; x.rotHim = 'himself / herself';
+    x.member = ((x.c.shareholders || []).find(h => h.name) || {}).name || x.d.name || '';
+    if (x.T) { x.rot = { name: '{{retiringDirector}}', din: '{{retiringDirectorDin}}' }; x.member = '{{soleMember}}'; }
     x.retForm = x.small ? 'MGT-7A' : 'MGT-7';
     x.fyEnd = f.fyEnd || '';
-    x.firstFY = !!(x.c.incDate && x.fyEnd && firstFYEnd(x.c.incDate) === x.fyEnd);
+    x.firstFY = !!(x.c.incDate && x.fyEnd && firstEnd(x.c) === x.fyEnd);
     x.fyFrom = x.firstFY ? x.c.incDate : (x.fyEnd ? addDays(addMonths(x.fyEnd, -12), 1) : '');
     x.prevFyEnd = x.fyEnd ? addMonths(x.fyEnd, -12) : '';
     x.bms = lines(f.bmList).map(parseDMY).filter(Boolean).sort();
@@ -575,7 +594,7 @@
  function fsWords(x) { // components of financial statements (cash flow not required for small company / OPC — Sec 2(40))
     return T(x, 'financialStatementsList', fsWords0(x)); }
   function fsWords0(x) {
-    return 'the Balance Sheet as at ' + ld(x.fyEnd) + ', the Statement of Profit and Loss' + (x.small ? '' : ', the Cash Flow Statement') + ' for the ' + (x.firstFY ? 'period from ' + ld(x.fyFrom) + ' to ' + ld(x.fyEnd) : 'financial year ended on that date') + ' and the notes thereto';
+    return 'the Balance Sheet as at ' + ld(x.fyEnd) + ', ' + x.PL.replace(/^the /, 'the ') + (x.small ? '' : ', the Cash Flow Statement') + ' for the ' + (x.firstFY ? 'period from ' + ld(x.fyFrom) + ' to ' + ld(x.fyEnd) : 'financial year ended on that date') + ' and the notes thereto';
   }
   function bmGapOK(x) { for (let i = 1; i < x.bms.length; i++) { if ((pd(x.bms[i]) - pd(x.bms[i - 1])) / 864e5 > 120) return false; } return true; }
   function resAdoption(x) {
@@ -586,21 +605,27 @@
     const unit = f.amtUnit || 'Amount in Rs.';
     let n = 0; const sec = (t, ...paras) => { out.push({ p: (++n) + '. ' + t.toUpperCase(), b: true, keep: true }, ...paras.map(p => typeof p === 'string' ? { p, al: 'j' } : p)); };
     out.push({ p: 'BOARD’S REPORT', b: true, al: 'c', sz: 28 }, { p: 'To,', after: 0 }, { p: 'The Members,', after: 0 }, { p: c.name, b: true },
-      { p: 'Your Directors have pleasure in presenting their Report on the business and operations of the Company together with the Audited Financial Statements for the ' + T(x, 'reportPeriod', x.firstFY ? 'period from ' + ld(x.fyFrom) + ' to ' + ld(x.fyEnd) : 'financial year ended ' + ld(x.fyEnd)) + '.' + (x.small ? ' This Report is prepared in accordance with Section 134 of the Companies Act, 2013 read with Rule 8A of the Companies (Accounts) Rules, 2014, applicable to ' + (x.isOPC ? 'One Person Companies' : 'small companies') + '.' : ''), al: 'j' });
+      { p: 'Your Directors have pleasure in presenting their Report on the business and operations of the Company together with the Audited Financial Statements for the ' + T(x, 'reportPeriod', x.firstFY ? 'period from ' + ld(x.fyFrom) + ' to ' + ld(x.fyEnd) : 'financial year ended ' + ld(x.fyEnd)) + '.' + (x.small ? ' This Report is prepared in accordance with Section 134 of the Companies Act, 2013 read with Rule 8A of the Companies (Accounts) Rules, 2014, applicable to ' + (x.isOPC ? 'One Person Companies' : 'small companies') + '.' : '') + (x.E.sec8 ? ' The Company is licensed under Section 8 of the Companies Act, 2013 as a company not for profit; its income and property are applied solely for the promotion of its objects and no dividend or other distribution is made to its members.' : ''), al: 'j' });
     sec('Financial summary / highlights', { p: '(' + unit + ')', al: 'r', after: 0 },
       { tbl: [['Particulars', 'FY ' + fyLabel(x.fyEnd), x.firstFY ? 'Previous year' : 'FY ' + fyLabel(x.prevFyEnd)],
-        ['Total revenue (including other income)', amt(f.revCur), x.firstFY ? '–' : amt(f.revPrev)], ['Profit / (Loss) before tax', amt(f.pbtCur), x.firstFY ? '–' : amt(f.pbtPrev)],
-        ['Less: Tax expense', amt(f.taxCur), x.firstFY ? '–' : amt(f.taxPrev)], ['Profit / (Loss) after tax', amt(f.patCur), x.firstFY ? '–' : amt(f.patPrev)]], cols: [50, 25, 25], head: true });
-    sec('State of company’s affairs', T(x, 'affairsText', f.affairs || ('During the year under review, the Company recorded total revenue of ' + (f.revCur ? 'Rs. ' + f.revCur : BL) + ' and a profit / (loss) after tax of ' + (f.patCur ? 'Rs. ' + f.patCur : BL) + '. The Directors are continuously looking for avenues for the future growth of the Company.')));
+        [x.E.sec8 ? 'Total income (grants, donations and other income)' : 'Total revenue (including other income)', amt(f.revCur), x.firstFY ? '–' : amt(f.revPrev)], [x.E.sec8 ? 'Surplus / (Deficit) before tax' : 'Profit / (Loss) before tax', amt(f.pbtCur), x.firstFY ? '–' : amt(f.pbtPrev)],
+        ['Less: Tax expense', amt(f.taxCur), x.firstFY ? '–' : amt(f.taxPrev)], [x.E.sec8 ? 'Surplus / (Deficit) for the year' : 'Profit / (Loss) after tax', amt(f.patCur), x.firstFY ? '–' : amt(f.patPrev)]], cols: [50, 25, 25], head: true });
+    sec('State of company’s affairs', T(x, 'affairsText', f.affairs || ('During the year under review, the Company recorded total revenue of ' + (f.revCur ? 'Rs. ' + f.revCur : BL) + (x.E.sec8 ? ' and a surplus / (deficit) of ' : ' and a profit / (loss) after tax of ') + (f.patCur ? 'Rs. ' + f.patCur : BL) + '.' + (x.E.sec8 ? ' The Company continued its activities for the promotion of its objects as set out in its Memorandum of Association.' : ' The Directors are continuously looking for avenues for the future growth of the Company.'))));
     sec('Change in the nature of business', F(x, 'natureChange', 'There was no change in the nature of business of the Company during the year under review.'));
-    sec('Dividend', F(x, 'dividend', 'The Board of Directors does not recommend any dividend for the year under review.'));
-    sec('Transfer to reserves', F(x, 'reserves', 'The Company has not transferred any amount to the reserves during the year under review.'));
+    sec('Dividend', F(x, 'dividend', x.E.sec8 ? 'Being a company licensed under Section 8 of the Companies Act, 2013, the Company is prohibited by its Memorandum of Association and the terms of its licence from paying any dividend to its members.' : 'The Board of Directors does not recommend any dividend for the year under review.'));
+    sec('Transfer to reserves', F(x, 'reserves', x.E.sec8 ? 'The surplus, if any, for the year under review has been retained in the Company and shall be applied only for the promotion of its objects.' : 'The Company has not transferred any amount to the reserves during the year under review.'));
     sec('Material changes and commitments', F(x, 'material', 'There are no material changes and commitments affecting the financial position of the Company which have occurred between the end of the financial year of the Company to which the financial statements relate and the date of this Report.'));
     const bmText0 = x.bms.length ? 'During the year under review, the Board of Directors met ' + x.bms.length + ' (' + (NUMW[x.bms.length] || x.bms.length) + ') time' + (x.bms.length > 1 ? 's' : '') + ', on ' + x.bms.map(ld).join('; ') + '.' + (!x.small && bmGapOK(x) && x.bms.length > 1 ? ' The intervening gap between two consecutive meetings did not exceed one hundred and twenty days, as prescribed under Section 173(1) of the Companies Act, 2013.' : x.small ? ' The meetings were held in compliance with Section 173 of the Companies Act, 2013.' : '') : 'During the year under review, the Board of Directors met ' + BL + ' times.';
     sec('Number of meetings of the Board', T(x, 'boardMeetingsText', bmText0));
     sec('Directors and Key Managerial Personnel', 'As on the date of this Report, the Board of Directors of the Company comprises:',
       { tbl: [['S. No.', 'Name', 'DIN', 'Designation'], ...(c.directors || []).map((d, i) => [String(i + 1), d.name, d.din || '—', d.desig || 'Director'])], cols: [8, 46, 20, 26], head: true },
       F(x, 'dirChanges', 'There was no change in the composition of the Board of Directors during the year under review.'));
+    if (x.E.pub) {
+      const r = x.rot;
+      sec('Directors retiring by rotation', T(x, 'rotationText', r.name ? 'In accordance with Section 152(6) of the Companies Act, 2013 and the Articles of Association of the Company, ' + r.name + ' (DIN: ' + v(r.din) + '), Director, retires by rotation at the ensuing Annual General Meeting and, being eligible, offers ' + (x.rotHim) + ' for re-appointment. The Board recommends the re-appointment.' : BL));
+      sec('Declaration by Independent Directors', F(x, 'idDecl', 'The provisions of Section 149(4) of the Companies Act, 2013 and Rule 4 of the Companies (Appointment and Qualification of Directors) Rules, 2014 relating to the appointment of Independent Directors are not applicable to the Company.'));
+      sec('Policy on directors’ appointment and remuneration', F(x, 'ncPolicy', 'The provisions of Section 178(1) of the Companies Act, 2013 relating to the constitution of the Nomination and Remuneration Committee are not applicable to the Company.'));
+    }
     if (full) sec('Deposits', F(x, 'deposits', 'The Company has not accepted any deposits within the meaning of Sections 73 and 76 of the Companies Act, 2013 read with the Companies (Acceptance of Deposits) Rules, 2014 during the year under review.'));
     if (full) sec('Particulars of loans, guarantees or investments', F(x, 'loans186', 'The Company has not given any loans or guarantees, or provided any security, or made any investments covered under the provisions of Section 186 of the Companies Act, 2013 during the year under review.'));
     sec('Particulars of contracts or arrangements with related parties', f.rpt === 'yes'
@@ -653,7 +678,8 @@
     D.push(bmNoticeDoc(x, ['To grant leave of absence, if any.', 'To confirm the minutes of the previous meeting of the Board.',
       'To consider and approve the Audited Financial Statements of the Company for the ' + FYW + ' ended ' + ld(x.fyEnd) + ', together with the Auditors’ Report thereon.',
       'To consider and approve the Board’s Report' + (f.rpt === 'yes' ? ' along with the annexure (Form AOC-2)' : '') + ' for the ' + FYW + ' ended ' + ld(x.fyEnd) + '.',
-      'To fix the date, time and venue of the ' + ord(f.agmNo) + ' Annual General Meeting and to approve the Notice thereof.',
+      x.E.opc ? 'To place the Audited Financial Statements and the Board’s Report before the sole member for adoption by resolution under Section 122(3) of the Companies Act, 2013.'
+        : 'To fix the date, time and venue of the ' + ord(f.agmNo) + ' Annual General Meeting and to approve the Notice thereof' + (x.E.pub ? ', including the re-appointment of ' + v(x.rot.name) + ' (DIN: ' + v(x.rot.din) + '), the Director retiring by rotation' : '') + '.',
       'To authorise Directors to sign the financial statements and the Board’s Report, and to file e-Form AOC-4 and e-Form ' + x.retForm + ' with the Registrar of Companies.',
       'Any other business with the permission of the Chairperson.']));
 
@@ -665,9 +691,11 @@
         { p: '**RESOLVED FURTHER THAT** ' + two + ' of the Company, be and ' + (x.isOPC ? 'is' : 'are') + ' hereby authorised to sign the said Financial Statements on behalf of the Board in terms of Section 134(1) of the Act and to submit the same to the Statutory Auditors for their report thereon.”', al: 'j' },
         { p: '**2. APPROVAL OF BOARD’S REPORT**', u: true },
         { p: '“**RESOLVED THAT** the Board’s Report for the ' + FYW + ' ended ' + ld(x.fyEnd) + (f.rpt === 'yes' ? ', together with the annexure in Form AOC-2,' : '') + ' prepared in accordance with Section 134(3) of the Companies Act, 2013' + (x.small ? ' read with Rule 8A of the Companies (Accounts) Rules, 2014' : ' read with Rule 8 of the Companies (Accounts) Rules, 2014') + ', as placed before the Board, be and is hereby approved, and that ' + two + ', be and ' + (x.isOPC ? 'is' : 'are') + ' hereby authorised to sign the same in terms of Section 134(6) of the Act.”', al: 'j' },
-        { p: '**3. CONVENING OF THE ' + ord(f.agmNo).toUpperCase() + ' ANNUAL GENERAL MEETING**', u: true },
-        { p: '“**RESOLVED THAT** the ' + ord(f.agmNo) + ' Annual General Meeting of the members of the Company be held on ' + dayName(f.agmDate) + ', ' + ld(f.agmDate) + ' at ' + tm(f.agmTime) + ' at ' + oneLine(x.venue(f.agmVenue)) + ', and the draft Notice convening the said meeting, as placed before the Board, be and is hereby approved.' + (f.shortNotice === 'yes' ? ' The meeting may be held at a shorter notice subject to the consent of not less than ninety-five per cent of the members entitled to vote thereat, in terms of the proviso to Section 101(1) of the Act.' : ''), al: 'j' },
-        { p: '**RESOLVED FURTHER THAT** ' + authWho(x) + ' to sign and issue the Notice of the Annual General Meeting to the members, directors and auditors of the Company.”', al: 'j' },
+        ...(x.E.opc ? [{ p: '**3. PLACING OF ACCOUNTS BEFORE THE SOLE MEMBER**', u: true },
+          { p: '“**RESOLVED THAT** pursuant to Section 96(1) and Section 122 of the Companies Act, 2013, the Company being a One Person Company is not required to hold an Annual General Meeting, and the Audited Financial Statements for the ' + FYW + ' ended ' + ld(x.fyEnd) + ', together with the Board’s Report and the Auditors’ Report thereon, be placed before the sole member, ' + v(x.member) + ', for adoption by resolution under Section 122(3) of the Act.”', al: 'j' }] : [
+          { p: '**3. CONVENING OF THE ' + ord(f.agmNo).toUpperCase() + ' ANNUAL GENERAL MEETING**', u: true },
+          { p: '“**RESOLVED THAT** the ' + ord(f.agmNo) + ' Annual General Meeting of the members of the Company be held on ' + dayName(f.agmDate) + ', ' + ld(f.agmDate) + ' at ' + tm(f.agmTime) + ' at ' + oneLine(x.venue(f.agmVenue)) + ', and the draft Notice convening the said meeting' + (x.E.pub ? ', which includes the re-appointment of ' + v(x.rot.name) + ' (DIN: ' + v(x.rot.din) + '), the Director retiring by rotation under Section 152(6) of the Act,' : '') + ' as placed before the Board, be and is hereby approved.' + (f.shortNotice === 'yes' ? ' The meeting may be held at a shorter notice subject to the consent of not less than ninety-five per cent of the members entitled to vote thereat, in terms of the proviso to Section 101(1) of the Act.' : ''), al: 'j' },
+          { p: '**RESOLVED FURTHER THAT** ' + authWho(x) + ' to sign and issue the Notice of the Annual General Meeting to the members, directors and auditors of the Company.”', al: 'j' },]),
         { p: '**4. AUTHORISATION FOR ANNUAL FILINGS**', u: true },
         { p: '“**RESOLVED THAT** any Director of the Company be and is hereby severally authorised to sign and file e-Form AOC-4 (financial statements) and e-Form ' + x.retForm + ' (annual return) with the Registrar of Companies for the ' + FYW + ' ended ' + ld(x.fyEnd) + ', and to do all such acts, deeds, matters and things as may be necessary in this regard.”', al: 'j' },
         { p: 'Certified True Copy', b: true }, ...sigCompany(x, f.bmDate)];
@@ -675,11 +703,13 @@
 
     D.push({ id: 'boardreport', title: 'Board’s Report' + (x.small ? ' (Rule 8A — small company / OPC)' : ' (Sec 134(3) & Rule 8)'), sub: 'Attachment to e-Form AOC-4' + (f.rpt === 'yes' ? ' — with Form AOC-2' : ''), lh: LH_CO, build: () => boardsReport(x) });
 
-    D.push({ id: 'agmnotice', title: 'Notice of ' + ord(f.agmNo) + ' AGM with Attendance Slip & Proxy (MGT-11)', sub: 'Sec 101, 96 & SS-2 — adoption of accounts', lh: LH_CO, build: () => {
+    const rotRes = () => '“**RESOLVED THAT** pursuant to Section 152(6) and other applicable provisions of the Companies Act, 2013, ' + v(x.rot.name) + ' (DIN: ' + v(x.rot.din) + '), who retires by rotation at this meeting and, being eligible, has offered ' + x.rotHim + ' for re-appointment, be and is hereby re-appointed as a Director of the Company, liable to retire by rotation.”';
+    if (!x.E.opc) D.push({ id: 'agmnotice', title: 'Notice of ' + ord(f.agmNo) + ' AGM with Attendance Slip & Proxy (MGT-11)', sub: 'Sec 101, 96 & SS-2 — adoption of accounts', lh: LH_CO, build: () => {
       const out = gmNoticeBody(x, 'agm', f.agmDate, f.agmTime, x.venue(f.agmVenue));
       out.push({ p: 'ORDINARY BUSINESS:', b: true, u: true },
         { p: '1.\tTo receive, consider and adopt the Audited Financial Statements of the Company for the ' + FYW + ' ended ' + ld(x.fyEnd) + ', together with the Reports of the Board of Directors and the Auditors thereon, and in this regard to consider and, if thought fit, to pass the following resolution as an **Ordinary Resolution**:', hang: true, al: 'j' },
         ...resAdoption(x).map(indent),
+        ...(x.E.pub ? [{ p: '2.\tTo appoint a Director in place of ' + v(x.rot.name) + ' (DIN: ' + v(x.rot.din) + '), who retires by rotation and, being eligible, offers ' + x.rotHim + ' for re-appointment, and in this regard to consider and, if thought fit, to pass the following resolution as an **Ordinary Resolution**:', hang: true, al: 'j' }, indent({ p: rotRes() })] : []),
         ...sigCompany(x, f.agmNotice, 'By Order of the Board\nFor ' + c.name), { gap: 1 }, { p: 'NOTES:', b: true, u: true },
         ...numbered([...GM_NOTES, ...(f.shortNotice === 'yes' ? ['The meeting is being convened at a shorter notice with the consent of not less than ninety-five per cent of the members entitled to vote thereat, in terms of the proviso to Section 101(1) of the Companies Act, 2013.'] : [])]));
       // attendance slip
@@ -696,14 +726,14 @@
         { p: 'I / We, being the member(s) of ____________ shares of the above named company, hereby appoint:', al: 'j', sz: 21 },
         ...[1, 2, 3].map(i => ({ p: i + '.\tName: __________________ Address: ________________________\nE-mail ID: __________________ Signature: ______________' + (i < 3 ? ', or failing him/her' : ''), hang: true, sz: 21, after: 60 })),
         { sz: 21, p: 'as my / our proxy to attend and vote (on a poll) for me / us and on my / our behalf at the ' + ord(f.agmNo) + ' Annual General Meeting of the Company, to be held on ' + dayName(f.agmDate) + ', ' + ld(f.agmDate) + ' at ' + tm(f.agmTime) + ' at ' + oneLine(x.venue(f.agmVenue)) + ' and at any adjournment thereof in respect of such resolutions as are indicated below:', al: 'j' },
-        { tbl: [['Res. No.', 'Resolution', 'For', 'Against'], ['1', 'Adoption of the Audited Financial Statements for the ' + FYW + ' ended ' + ld(x.fyEnd) + ' together with the Reports of the Board and the Auditors (Ordinary Resolution)', '', '']], cols: [12, 64, 12, 12], head: true },
+        { tbl: [['Res. No.', 'Resolution', 'For', 'Against'], ['1', 'Adoption of the Audited Financial Statements for the ' + FYW + ' ended ' + ld(x.fyEnd) + ' together with the Reports of the Board and the Auditors (Ordinary Resolution)', '', ''], ...(x.E.pub ? [['2', 'Re-appointment of ' + v(x.rot.name) + ' (DIN: ' + v(x.rot.din) + '), who retires by rotation (Ordinary Resolution)', '', '']] : [])], cols: [12, 64, 12, 12], head: true },
         { p: 'Signed this ______ day of ______________ 20___', sz: 21 },
         { tbl: [['Signature of the shareholder', '', 'Affix\nRevenue\nStamp'], ['Signature of the proxy holder(s)', '', '']], cols: [35, 45, 20] },
         { p: 'Note: This form of proxy, in order to be effective, should be duly completed and deposited at the Registered Office of the Company not less than 48 hours before the commencement of the meeting.', sz: 20, al: 'j' });
       return out;
     } });
 
-    if (f.shortNotice === 'yes') D.push({ id: 'shortnotice', title: 'Consent of Members for Shorter Notice', sub: 'Proviso to Sec 101(1) — 95% of members', lh: LH_PLAIN, build: () => {
+    if (f.shortNotice === 'yes' && !x.E.opc) D.push({ id: 'shortnotice', title: 'Consent of Members for Shorter Notice', sub: 'Proviso to Sec 101(1) — 95% of members', lh: LH_PLAIN, build: () => {
       const list = shareholders.length ? shareholders : [{ name: '', shares: '' }];
       const out = [];
       list.forEach((s, i) => {
@@ -715,10 +745,21 @@
       return out;
     } });
 
-    D.push({ id: 'agmctc', title: 'Certified True Copy of Members’ Resolution', sub: 'Adoption of accounts at AGM', lh: LH_CO, build: () => [
-      ctcHead(x, 'ORDINARY RESOLUTION PASSED BY THE MEMBERS AT THE ' + ord(f.agmNo).toUpperCase() + ' ANNUAL GENERAL MEETING', f.agmDate, f.agmTime, x.venue(f.agmVenue)), { gap: 1 },
+    if (!x.E.opc) D.push({ id: 'agmctc', title: 'Certified True Copy of Members’ Resolution' + (x.E.pub ? 's' : ''), sub: 'Adoption of accounts at AGM' + (x.E.pub ? ' & director retiring by rotation' : ''), lh: LH_CO, build: () => [
+      ctcHead(x, 'ORDINARY RESOLUTION' + (x.E.pub ? 'S' : '') + ' PASSED BY THE MEMBERS AT THE ' + ord(f.agmNo).toUpperCase() + ' ANNUAL GENERAL MEETING', f.agmDate, f.agmTime, x.venue(f.agmVenue)), { gap: 1 },
+      { p: '**' + (x.E.pub ? '1. ' : '') + 'ADOPTION OF AUDITED FINANCIAL STATEMENTS FOR THE ' + FYW.toUpperCase() + ' ENDED ' + ld(x.fyEnd).toUpperCase() + '**', u: true },
+      ...resAdoption(x).map(b => Object.assign({}, b, { al: 'j' })),
+      ...(x.E.pub ? [{ p: '**2. RE-APPOINTMENT OF ' + String(v(x.rot.name)).toUpperCase() + ', DIRECTOR RETIRING BY ROTATION**', u: true }, { p: rotRes(), al: 'j' }] : []),
+      { p: 'Certified True Copy', b: true }, ...sigCompany(x, f.agmDate)] });
+    // OPC: no AGM — the sole member adopts the accounts by a resolution entered in the minutes book (Sec 122(3) & (4))
+    if (x.E.opc) D.push({ id: 'memberres', title: 'Resolution of the Sole Member — Adoption of Accounts', sub: 'Sec 122(3) & (4) — OPC is not required to hold an AGM (Sec 96(1))', lh: LH_CO, build: () => [
+      { p: 'RESOLUTION PASSED BY THE SOLE MEMBER OF ' + String(c.name || '').toUpperCase() + ' PURSUANT TO SECTION 122(3) OF THE COMPANIES ACT, 2013 ON ' + dayName(f.agmDate).toUpperCase() + ', ' + ld(f.agmDate).toUpperCase(), b: true, al: 'j' }, { gap: 1 },
       { p: '**ADOPTION OF AUDITED FINANCIAL STATEMENTS FOR THE ' + FYW.toUpperCase() + ' ENDED ' + ld(x.fyEnd).toUpperCase() + '**', u: true },
-      ...resAdoption(x).map(b => Object.assign({}, b, { al: 'j' })), { p: 'Certified True Copy', b: true }, ...sigCompany(x, f.agmDate)] });
+      { p: 'The sole member of the Company, having received the Audited Financial Statements together with the Board’s Report and the Auditors’ Report thereon, passed the following resolution, which is deemed to have been passed at a general meeting of the Company in terms of Section 122(3) of the Companies Act, 2013:', al: 'j' },
+      ...resAdoption(x).map(b => Object.assign({}, b, { al: 'j' })),
+      { p: 'This resolution is communicated to the Company and is entered in the minutes book of the Company, signed and dated by the member, in terms of Section 122(4) of the Act.', al: 'j' },
+      { gap: 2 }, { p: '____________________', after: 0, keep: true }, { p: v(x.member), b: true, after: 0, keep: true }, { p: 'Sole Member', after: 0, keep: true },
+      { p: 'Place: ' + v(f.place), after: 0, keep: true }, { p: 'Date: ' + ld(f.agmDate), after: 0 }] });
 
     if (shareholders.length) D.push({ id: 'shlist', title: 'List of Shareholders as on ' + sd(x.fyEnd), sub: 'Attachment to e-Form ' + x.retForm, lh: LH_CO, build: () => {
       const tot = shareholders.reduce((s, h) => s + (parseFloat(String(h.shares).replace(/,/g, '')) || 0), 0);
@@ -733,12 +774,13 @@
       const tot = shareholders.reduce((s, h) => s + (parseFloat(String(h.shares).replace(/,/g, '')) || 0), 0);
       return [{ p: 'e-FORM AOC-4 & ' + x.retForm + ' — DATA SHEET & FILING CHECKLIST', b: true, al: 'c', sz: 28 }, { p: c.name + ' (CIN: ' + v(c.cin) + ') — FY ' + fyLabel(x.fyEnd), al: 'c' },
         head('A. Company details'), { tbl: [['CIN', v(c.cin)], ['Name of the company', c.name], ['Registered office', oneLine(c.addr)], ['Email / Website', v(c.email) + ' / ' + (c.web || 'None')], ['Category', c.type === 'opc' ? 'One Person Company' : c.type === 'public' ? 'Public company (unlisted)' : 'Private company'], ['Small company / OPC (MGT-7A)', x.small ? 'Yes' : 'No — MGT-7']] },
-        head('B. Financial year & meetings'), { tbl: [['Financial year', sd(x.fyFrom) + ' to ' + sd(x.fyEnd) + (x.firstFY ? ' (first financial year)' : '')], ['Board meeting approving accounts', sd(f.bmDate)], ['AGM', ord(f.agmNo) + ' AGM on ' + sd(f.agmDate) + (f.shortNotice === 'yes' ? ' (shorter notice)' : '')], ['Number of Board meetings during the year', String(x.bms.length || BL)], ['Dates of Board meetings', x.bms.map(sd).join(', ') || BL]] },
+        head('B. Financial year & meetings'), { tbl: [['Financial year', sd(x.fyFrom) + ' to ' + sd(x.fyEnd) + (x.firstFY ? ' (first financial year)' : '')], ['Type of company', x.E.label + (x.E.sec8 ? ' (licensed under Sec 8)' : '')], ['Board meeting approving accounts', sd(f.bmDate)], x.E.opc ? ['AGM', 'Not required for an OPC (Sec 96(1)) — sole member’s resolution on ' + sd(f.agmDate) + ' (Sec 122(3))'] : ['AGM', ord(f.agmNo) + ' AGM on ' + sd(f.agmDate) + (f.shortNotice === 'yes' ? ' (shorter notice)' : ' (' + x.E.noticeDays + ' clear days’ notice)')], ...(x.E.pub ? [['Director retiring by rotation (Sec 152(6))', v(x.rot.name) + ' (DIN: ' + v(x.rot.din) + ')']] : []), ['Number of Board meetings during the year', String(x.bms.length || BL)], ['Dates of Board meetings', x.bms.map(sd).join(', ') || BL]] },
         head('C. Share capital & members'), { tbl: [['Authorised capital (Rs.)', v(c.authCap)], ['Paid-up capital (Rs.)', v(c.paidCap)], ['Face value per share (Rs.)', v(c.faceValue)], ['Total equity shares (as per shareholder list)', tot ? tot.toLocaleString('en-IN') : BL], ['Number of shareholders', shareholders.length ? String(shareholders.length) : BL]] },
         head('D. Turnover & net worth'), { tbl: [['Turnover (Rs.)', v(f.turnover)], ['Net worth (Rs.)', v(f.netWorth)], ['Total revenue / Profit after tax (Rs.)', amt(f.revCur) + ' / ' + amt(f.patCur)]] },
         head('E. Directors'), { tbl: [['Name', 'DIN', 'Designation'], ...(c.directors || []).map(d => [d.name, d.din || '—', d.desig || 'Director'])], cols: [50, 20, 30], head: true },
         head('F. Statutory auditor'), { tbl: [['Firm / FRN', v(a.firm) + ' / ' + v(a.frn)], ['Signing partner / M. No.', v(a.partner) + ' / ' + v(a.mno)]] },
-        head('G. Due dates'), { tbl: [['AGM due by', sd(agmDue) + ' (' + (x.firstFY ? '9 months from end of first FY' : '6 months from end of FY') + ', Sec 96)'], ['e-Form AOC-4 due by', '**' + sd(addDays(f.agmDate, 30)) + '** (30 days from AGM — Sec 137)'], ['e-Form ' + x.retForm + ' due by', '**' + sd(addDays(f.agmDate, 60)) + '** (60 days from AGM — Sec 92(4))']] },
+        head('G. Due dates'), { tbl: x.E.opc ? [['AGM', 'Not required (Sec 96(1))'], ['e-Form AOC-4 due by', '**' + sd(addDays(x.fyEnd, 180)) + '** (180 days from the end of the FY — proviso to Sec 137(1))'], ['e-Form MGT-7A due by', '**' + sd(addDays(agmDue, 60)) + '** (60 days from the date by which the AGM would have been held — Sec 92(4))']]
+          : [['AGM due by', sd(agmDue) + ' (' + (x.firstFY ? '9 months from end of first FY' : '6 months from end of FY') + ', Sec 96)'], ['e-Form AOC-4 due by', '**' + sd(addDays(f.agmDate, 30)) + '** (30 days from AGM — Sec 137)'], ['e-Form ' + x.retForm + ' due by', '**' + sd(addDays(f.agmDate, 60)) + '** (60 days from AGM — Sec 92(4))']] },
         head('H. Attachments to AOC-4'), ...numbered(['Financial statements — ' + fsWords(x) + ' (prepared and signed separately)', 'Auditors’ Report (with UDIN)', 'Board’s Report' + (f.rpt === 'yes' ? ', with Form AOC-2 (Annexure-I)' : ''), 'Statement of subsidiaries in Form AOC-1 and CSR annexure — only if applicable']),
         head('I. Attachments to ' + x.retForm), ...numbered([shareholders.length ? 'List of shareholders as on ' + sd(x.fyEnd) : 'List of shareholders (add shareholders in the client master to generate it)', 'Approval letter for extension of AGM — only if an extension was granted', ...(!x.small ? ['Form MGT-8 (certificate by a Company Secretary in practice) — required if paid-up capital ≥ Rs. 10 crore or turnover ≥ Rs. 50 crore'] : [])]),
         head('J. Before filing'), ...numbered(['Financial statements signed as per Sec 134(1) and the Board’s Report as per Sec 134(6) before the AGM notice is issued.', 'The auditor’s UDIN is generated and quoted on the Auditors’ Report.', 'Directors’ DIN KYC (DIR-3 KYC) is active; the signing director’s DSC is registered on MCA.', 'File AOC-4 XBRL instead of AOC-4 if the company is covered by the XBRL rules (listed, paid-up ≥ Rs. 5 crore or turnover ≥ Rs. 100 crore).', 'File AOC-4 first and MGT-7/7A after it; keep the SRNs and challans in the client file.']),
@@ -1158,6 +1200,12 @@
      ===================================================================== */
   function registerDocs(x) {
     const { c, f } = x, fv = num(c.faceValue) || 10;
+    if (x.E && x.E.llp) return [{ id: 'llpreg', title: 'Register of Partners — Form 4A', sub: 'LLP Rule 22A — pre-filled from the partners in the client master', lh: LH_NONE, landscape: true, build: () => [
+      ...formHead('Form No. 4A', 'Register of Partners', 'Pursuant to Section 25 of the Limited Liability Partnership Act, 2008 and Rule 22A of the Limited Liability Partnership Rules, 2009'),
+      { p: c.name + ' (LLPIN: ' + v(c.cin) + ') — as on ' + ld(f.asOn || new Date().toISOString().slice(0, 10)), al: 'c', b: true },
+      { tbl: [['S. No.', 'Name of the partner', 'DPIN / DIN / PAN', 'Father’s / spouse’s name', 'Address / e-mail', 'Occupation', 'Nationality', 'Date of becoming partner', 'Designated partner (Y/N)', 'Contribution (Rs.)', 'Form of contribution', 'Date of cessation', 'Remarks'],
+        ...(c.directors || []).filter(d => d.name).map((d, i) => [String(i + 1), d.name, d.din || '', '', '', '', 'Indian', d.appt ? sd(d.appt) : '', /designated/i.test(d.desig || 'Designated') ? 'Yes' : 'No', '', 'Monetary', '', ''])], cols: [4, 12, 8, 10, 14, 7, 6, 8, 7, 7, 6, 6, 5], head: true },
+      stmtNote('Columns not held in the portal are left blank — complete them from the LLP agreement and Form 4 records. The register is kept at the registered office of the LLP.')] }];
     let dn = 1;
     const mem = (c.shareholders || []).filter(h => h.name).map((h, i) => { const n = num(h.shares), r = [String(i + 1), h.folio || '', h.name, '', '', '', h.cat || '', '', inr(n), n ? inr(dn) + ' – ' + inr(dn + n - 1) : '', inr(n * fv), '', '']; dn += n; return r; });
     return [{ id: 'mgt1', title: 'Register of Members — Form MGT-1', sub: 'Sec 88 & Rule 3 — pre-filled from client master', lh: LH_NONE, landscape: true, build: () => [
@@ -1180,7 +1228,7 @@
   function meetingsBefore(c, fyEnd, count) {
     if (!c.incDate || !fyEnd) return 0;
     let n = 0;
-    for (let e = firstFYEnd(c.incDate), k = 0; e && e < fyEnd && k < 30; e = addMonths(e, 12), k++) n += fyMeetings(c, e, { count }).length;
+    for (let e = firstEnd(c), k = 0; e && e < fyEnd && k < 30; e = addMonths(e, 12), k++) n += fyMeetings(c, e, { count }).length;
     return n;
   }
   function yearlyDocs(x) {
@@ -1203,12 +1251,15 @@
     const business = m => {
       const L = [];
       L.push({ t: 'Chairperson of the meeting', ag: 'To elect the Chairperson of the meeting.', min: chair.name ? v(chair.name) + ', Director, was unanimously elected as the Chairperson of the meeting and took the Chair.' : BL + ' was elected as the Chairperson of the meeting.' });
-      L.push({ t: 'Quorum', min: 'The Chairperson confirmed that the requisite quorum was present throughout the meeting in terms of Section 174 of the Companies Act, 2013, and called the meeting to order.' });
+      L.push({ t: 'Quorum', min: x.E.sec8 ? 'The Chairperson confirmed that the requisite quorum, being eight members or twenty-five per cent of the total strength of the Board, whichever is less, but not less than two Directors, was present throughout the meeting in terms of Section 174(1) of the Companies Act, 2013 as applicable to Section 8 companies, and called the meeting to order.'
+        : 'The Chairperson confirmed that the requisite quorum (one-third of the total strength of the Board or two Directors, whichever is higher) was present throughout the meeting in terms of Section 174(1) of the Companies Act, 2013, and called the meeting to order.' });
       L.push({ t: 'Leave of absence', ag: 'To grant leave of absence, if any.', min: 'All the Directors were present at the meeting. No request for leave of absence was received.' });
       if (m.prev) L.push({ t: 'Confirmation of the minutes of the previous meeting', ag: 'To confirm the minutes of the previous meeting of the Board held on ' + ld(m.prev) + '.', min: 'The minutes of the previous meeting of the Board of Directors held on ' + ld(m.prev) + ', as circulated, were taken as read, confirmed and signed by the Chairperson.' });
       if (m.kind === 'first') {
         L.push({ t: 'Certificate of Incorporation', ag: 'To take note of the Certificate of Incorporation of the Company.', min: 'The Board took note of the Certificate of Incorporation dated ' + ld(c.incDate) + ' issued by the Registrar of Companies, Central Registration Centre, bearing Corporate Identity Number ' + v(c.cin) + '.' });
         L.push({ t: 'Memorandum and Articles of Association', ag: 'To take note of the Memorandum and Articles of Association of the Company.', min: 'The Board took note of the Memorandum and Articles of Association of the Company as registered with the Registrar of Companies.' });
+        if (x.E.sec8) L.push({ t: 'Licence under Section 8', ag: 'To take note of the licence granted under Section 8 of the Companies Act, 2013.', min: 'The Board took note of the licence granted by the Central Government under Section 8 of the Companies Act, 2013, and noted that the income and property of the Company shall be applied solely for the promotion of its objects and no dividend shall be paid to its members.' });
+        if (x.E.opc) L.push({ t: 'Nominee of the sole member', ag: 'To take note of the nominee of the sole member.', min: 'The Board took note of the nominee named by the sole member in the Memorandum of Association, whose consent in Form INC-3 was filed with the Registrar at the time of incorporation (Section 3(1) read with Rule 4 of the Companies (Incorporation) Rules, 2014).' });
         L.push({ t: 'First Directors and registered office', ag: 'To take note of the first Directors and the situation of the registered office.', min: 'The Board noted that ' + dirNames + ' are the first Directors of the Company in terms of its Articles of Association, and that the registered office of the Company is situated at ' + oneLine(c.addr) + '.' });
         L.push({ t: 'Appointment of first Statutory Auditors', ag: 'To appoint the first Statutory Auditors of the Company under Section 139(6) of the Companies Act, 2013.',
           res: '“**RESOLVED THAT** pursuant to Section 139(6) and other applicable provisions, if any, of the Companies Act, 2013 read with the Companies (Audit and Auditors) Rules, 2014 ' + STAT + ', and on the basis of the written consent and certificate of eligibility received under Sections 139(1) and 141 of the Act, ' + x.firmDesc + ', be and are hereby appointed as the first Statutory Auditors of the Company to hold office from the conclusion of this meeting till the conclusion of the first Annual General Meeting of the Company, ' + x.remun + '.\n**RESOLVED FURTHER THAT** ' + authWho(x) + ' to intimate the Auditors and to file e-Form ADT-1 with the Registrar of Companies.”' });
@@ -1221,12 +1272,16 @@
       if (m.kind === 'accounts') {
         const ap = 'the ' + (isFirstFY(c, prevEnd) ? 'period' : 'financial year') + ' ended ' + ld(prevEnd);
         L.push({ t: 'Approval of the audited financial statements for ' + ap, ag: 'To consider and approve the audited financial statements of the Company for ' + ap + ', together with the Auditors’ Report thereon.',
-          res: '“**RESOLVED THAT** pursuant to Section 134 of the Companies Act, 2013, the audited financial statements of the Company for ' + ap + ', comprising the Balance Sheet, the Statement of Profit and Loss' + (x.small ? '' : ', the Cash Flow Statement') + ' and the notes thereto, together with the Auditors’ Report thereon, as placed before the Board, be and are hereby approved, and that the same be signed by two Directors on behalf of the Board in terms of Section 134(1) of the Act.”' });
+          res: '“**RESOLVED THAT** pursuant to Section 134 of the Companies Act, 2013, the audited financial statements of the Company for ' + ap + ', comprising the Balance Sheet, ' + x.PL + (x.small ? '' : ', the Cash Flow Statement') + ' and the notes thereto, together with the Auditors’ Report thereon, as placed before the Board, be and are hereby approved, and that the same be signed by two Directors on behalf of the Board in terms of Section 134(1) of the Act.”' });
         L.push({ t: 'Approval of the Board’s Report', ag: 'To consider and approve the Board’s Report for ' + ap + '.', res: '“**RESOLVED THAT** the Board’s Report for ' + ap + ', prepared in accordance with Section 134(3) of the Companies Act, 2013, as placed before the Board, be and is hereby approved, and the Chairperson / any two Directors be and are hereby authorised to sign the same in terms of Section 134(6) of the Act.”' });
+        if (x.E.opc) L.push({ t: 'Placing of accounts before the sole member', ag: 'To place the audited financial statements and the Board’s Report before the sole member for adoption under Section 122(3) of the Companies Act, 2013.',
+          res: '“**RESOLVED THAT** the Company being a One Person Company is not required to hold an Annual General Meeting under Section 96(1) of the Companies Act, 2013, and the audited financial statements for ' + ap + ', together with the Board’s Report and the Auditors’ Report thereon, be placed before the sole member, ' + v(x.member) + ', for adoption by resolution under Section 122(3) of the Act.”' });
+        else {
         L.push({ t: 'Convening of the ' + ord(agmNo) + ' Annual General Meeting', ag: 'To fix the date, time and venue of the ' + ord(agmNo) + ' Annual General Meeting and to approve the Notice thereof.',
-          res: '“**RESOLVED THAT** the ' + ord(agmNo) + ' Annual General Meeting of the members of the Company be held on ' + dayName(f.agmDate) + ', ' + ld(f.agmDate) + ' at ' + tm(agmTime) + ' at ' + oneLine(agmVenue) + ', and the draft Notice convening the said meeting, as placed before the Board, be and is hereby approved.\n**RESOLVED FURTHER THAT** ' + authWho(x) + ' to sign and issue the Notice to the members, Directors and Auditors of the Company.”' });
+          res: '“**RESOLVED THAT** the ' + ord(agmNo) + ' Annual General Meeting of the members of the Company be held on ' + dayName(f.agmDate) + ', ' + ld(f.agmDate) + ' at ' + tm(agmTime) + ' at ' + oneLine(agmVenue) + ', and the draft Notice convening the said meeting' + (x.E.pub ? ', which includes the re-appointment of ' + v(x.rot.name) + ' (DIN: ' + v(x.rot.din) + '), the Director retiring by rotation under Section 152(6) of the Act,' : '') + ' as placed before the Board, be and is hereby approved.\n**RESOLVED FURTHER THAT** ' + authWho(x) + ' to sign and issue the Notice to the members, Directors and Auditors of the Company.”' });
         if (audAtAgm) L.push({ t: 'Recommendation for appointment of Statutory Auditors', ag: 'To recommend to the members the appointment of Statutory Auditors for a term of five years.',
           res: '“**RESOLVED THAT** pursuant to Section 139(1) of the Companies Act, 2013 and the Rules made thereunder, and on the basis of the written consent and certificate of eligibility received, the Board recommends to the members the appointment of ' + x.firmDesc + ', as the Statutory Auditors of the Company for a term of five consecutive years, to hold office from the conclusion of the ' + ord(agmNo) + ' Annual General Meeting till the conclusion of the ' + ord(agmNo + 5) + ' Annual General Meeting, and that the same be included in the Notice of the ' + ord(agmNo) + ' Annual General Meeting.”' });
+        }
         L.push({ t: 'Authorisation for annual filings', ag: 'To authorise the filing of e-Forms AOC-4 and ' + prevRet + ' with the Registrar of Companies.', res: '“**RESOLVED THAT** any Director of the Company be and is hereby severally authorised to sign and file e-Form AOC-4 and e-Form ' + prevRet + ' for ' + ap + ' with the Registrar of Companies within the time prescribed under Sections 137 and 92 of the Companies Act, 2013.”' });
       }
       if (m.kind === 'q1') {
@@ -1249,11 +1304,12 @@
       const need = x.isOPC ? 1 : String(f.bmCount) === '2' ? 2 : 4;
       return [{ p: 'BOARD MEETINGS & AGM — ' + FYL, b: true, al: 'c', sz: 28 }, { p: c.name + ' (CIN: ' + v(c.cin) + ') — ' + ld(from) + ' to ' + ld(fyE), al: 'c' },
         { tbl: [['S. No.', 'Meeting No.', 'Date', 'Day', 'Notice by', 'Days since last', 'Main business'], ...M.map((m, i) => [String(i + 1), ord(m.no), sd(m.date), dayName(m.date), sd(m.notice), gaps[i] == null ? '—' : String(gaps[i]), KIND[m.kind]]),
-          ...(hasAgm ? [['AGM', ord(agmNo) + ' AGM', sd(f.agmDate), dayName(f.agmDate), sd(defAgmNotice(f.agmDate)), '—', 'Adoption of accounts of FY ' + fyLabel(prevEnd) + (audAtAgm ? '; appointment of auditors for 5 years' : '')]] : [])], cols: [6, 10, 12, 13, 12, 9, 38], head: true },
+          ...(hasAgm && x.E.opc ? [['Member', 'Sole member', sd(f.agmDate), dayName(f.agmDate), '—', '—', 'Resolution adopting accounts of FY ' + fyLabel(prevEnd) + ' (Sec 122(3))']] : []),
+          ...(hasAgm && !x.E.opc ? [['AGM', ord(agmNo) + ' AGM', sd(f.agmDate), dayName(f.agmDate), sd(defAgmNotice(f.agmDate, c)), '—', 'Adoption of accounts of FY ' + fyLabel(prevEnd) + (audAtAgm ? '; appointment of auditors for 5 years' : '') + (x.E.pub ? '; director retiring by rotation' : '')]] : [])], cols: [6, 10, 12, 13, 12, 9, 38], head: true },
         head('Checks'), ...numbered([
-          'Board meetings in the year: ' + M.length + ' (minimum ' + (x.isOPC ? 'one in each half of the calendar year for an OPC / small company, at least 90 days apart — Sec 173(5)' : need === 2 ? 'one in each half of the calendar year, at least 90 days apart — Sec 173(5), small company' : 'four, not more than 120 days between two meetings — Sec 173(1)') + ').',
-          'Largest gap between two meetings: ' + (Math.max(0, ...gaps.filter(g => g != null)) || '—') + ' days' + (need === 4 && gaps.some(g => g > 120) ? ' — EXCEEDS 120 DAYS, change the dates.' : '.'),
-          first ? 'First Board meeting within 30 days of incorporation (Sec 173(1)): by ' + sd(addDays(c.incDate, 30)) + '.' : 'AGM for FY ' + fyLabel(prevEnd) + ' due by ' + sd(agmDueOf(c, prevEnd)) + ' (Sec 96).',
+          'Type of company: ' + x.E.label + '. Board meetings in the year: ' + M.length + ' — requirement: ' + bmRule(x).text + '.',
+          'Largest gap between two meetings: ' + (Math.max(0, ...gaps.filter(g => g != null)) || '—') + ' days' + (bmRule(x).gap && gaps.some(g => g > bmRule(x).gap) ? ' — EXCEEDS ' + bmRule(x).gap + ' DAYS, change the dates.' : '.'),
+          first ? 'First Board meeting within 30 days of incorporation (Sec 173(1)): by ' + sd(addDays(c.incDate, 30)) + '.' : x.E.opc ? 'No AGM for an OPC (Sec 96(1)); the sole member adopts the accounts of FY ' + fyLabel(prevEnd) + ' by resolution (Sec 122(3)).' : 'AGM for FY ' + fyLabel(prevEnd) + ' due by ' + sd(agmDueOf(c, prevEnd)) + ' (Sec 96); notice of ' + x.E.noticeDays + ' clear days (Sec 101).',
           'Notice of every Board meeting: at least 7 days in advance to all Directors (Sec 173(3)); minutes to be entered within 30 days (SS-1).',
           'Dates avoid Sundays and national holidays; change any date in “Dates of Board meetings”.']),
         { p: 'Internal working paper.', sz: 18 }];
@@ -1305,7 +1361,18 @@
       return out;
     } });
 
-    if (hasAgm) D.push({ id: 'yagmmin', title: 'Minutes of the ' + ord(agmNo) + ' Annual General Meeting', sub: 'Sec 118 & SS-2 — AGM held on ' + sd(f.agmDate) + ' for FY ' + fyLabel(prevEnd), lh: LH_PLAIN, build: () => {
+    if (hasAgm && x.E.opc) D.push({ id: 'ymemberres', title: 'Resolution of the Sole Member — Accounts of FY ' + fyLabel(prevEnd), sub: 'Sec 122(3) & (4) — entered in the minutes book (no AGM for an OPC)', lh: LH_PLAIN, build: () => {
+      const ap = 'the ' + (isFirstFY(c, prevEnd) ? 'period' : 'financial year') + ' ended ' + ld(prevEnd);
+      return [{ p: c.name.toUpperCase(), b: true, al: 'c', after: 0 }, { p: 'CIN: ' + v(c.cin), al: 'c', after: 0, sz: 20 }, { p: 'Regd. Office: ' + oneLine(c.addr), al: 'c', sz: 20 },
+        { p: 'MINUTES OF THE RESOLUTION PASSED BY THE SOLE MEMBER PURSUANT TO SECTION 122(3) OF THE COMPANIES ACT, 2013 ON ' + dayName(f.agmDate).toUpperCase() + ', ' + ld(f.agmDate).toUpperCase(), b: true, al: 'j' },
+        { p: '**ADOPTION OF THE AUDITED FINANCIAL STATEMENTS FOR ' + ap.toUpperCase() + '**', u: true },
+        { p: 'The sole member, ' + v(x.member) + ', having received the audited financial statements for ' + ap + ' together with the Board’s Report and the Auditors’ Report thereon, passed the following resolution, which is deemed to have been passed at a general meeting (Section 122(3)):', al: 'j' },
+        { p: '“**RESOLVED THAT** the audited financial statements of the Company for ' + ap + ', comprising the Balance Sheet, ' + x.PL + ' and the notes thereto, together with the Reports of the Board of Directors and the Auditors thereon, be and are hereby received, considered and adopted.”', al: 'j' },
+        ...(audAtAgm ? [{ p: '“**RESOLVED FURTHER THAT** pursuant to Section 139(1) of the Companies Act, 2013, ' + x.firmDesc + ', be and are hereby appointed as the Statutory Auditors of the Company for a term of five consecutive years, ' + x.remun + '.”', al: 'j' }] : []),
+        { gap: 2 }, { p: '____________________', after: 0, keep: true }, { p: v(x.member), b: true, after: 0, keep: true }, { p: 'Sole Member', after: 0, keep: true },
+        { p: 'Date of entry in the minutes book: ____________', after: 0, keep: true }, { p: 'Place: ' + v(f.place), after: 0 }];
+    } });
+    if (hasAgm && !x.E.opc) D.push({ id: 'yagmmin', title: 'Minutes of the ' + ord(agmNo) + ' Annual General Meeting', sub: 'Sec 118 & SS-2 — AGM held on ' + sd(f.agmDate) + ' for FY ' + fyLabel(prevEnd), lh: LH_PLAIN, build: () => {
       const sh = (c.shareholders || []).filter(h => h.name), ap = 'the ' + (isFirstFY(c, prevEnd) ? 'period' : 'financial year') + ' ended ' + ld(prevEnd);
       const out = [{ p: c.name.toUpperCase(), b: true, al: 'c', after: 0 }, { p: 'CIN: ' + v(c.cin), al: 'c', after: 0, sz: 20 }, { p: 'Regd. Office: ' + oneLine(c.addr), al: 'c', sz: 20 },
         { p: 'MINUTES OF THE ' + ord(agmNo).toUpperCase() + ' ANNUAL GENERAL MEETING OF THE MEMBERS OF ' + String(c.name).toUpperCase() + ' HELD ON ' + dayName(f.agmDate).toUpperCase() + ', ' + ld(f.agmDate).toUpperCase() + ' AT ' + tm(agmTime) + ' AT ' + oneLine(agmVenue).toUpperCase(), b: true, al: 'j' },
@@ -1316,7 +1383,7 @@
         { p: 'IN ATTENDANCE: Representative of the Statutory Auditors, ' + x.firmDesc + '.', al: 'j' }];
       const items = [
         ['Chairperson', v(chair.name) + ', ' + (chair.desig || 'Director') + ', took the Chair in accordance with the Articles of Association of the Company and welcomed the members.'],
-        ['Quorum', 'The requisite quorum being present in terms of Section 103 of the Companies Act, 2013, the Chairperson called the meeting to order.'],
+        ['Quorum', 'The requisite quorum (' + (x.E.pub ? 'five members personally present, the number of members being not more than one thousand — Section 103(1)(a)(i)' : 'two members personally present — Section 103(1)(b)') + ') being present, the Chairperson called the meeting to order.'],
         ['Notice and Auditors’ Report', 'With the consent of the members present, the Notice convening the meeting, which had been sent to all the members, Directors and Auditors, was taken as read. The Auditors’ Report on the financial statements for ' + ap + ' did not contain any qualification, reservation or adverse remark and was taken as read (Section 145).'],
         ['Registers', 'The Register of Directors and Key Managerial Personnel and their shareholding was kept open for inspection at the meeting (Section 170).']];
       items.forEach((it, i) => out.push({ p: (i + 1) + '. ' + it[0].toUpperCase(), b: true, keep: true }, { p: it[1], al: 'j' }));
@@ -1324,6 +1391,9 @@
       out.push({ p: (++n) + '. ADOPTION OF THE AUDITED FINANCIAL STATEMENTS (ORDINARY RESOLUTION)', b: true, keep: true },
         { p: 'The following resolution, proposed by a member and seconded by another member, was passed unanimously as an **Ordinary Resolution** by show of hands:', al: 'j' },
         { p: '“**RESOLVED THAT** the audited financial statements of the Company for ' + ap + ', together with the Reports of the Board of Directors and the Auditors thereon, be and are hereby received, considered and adopted.”', al: 'j' });
+      if (x.E.pub) out.push({ p: (++n) + '. RE-APPOINTMENT OF ' + String(v(x.rot.name)).toUpperCase() + ', DIRECTOR RETIRING BY ROTATION (ORDINARY RESOLUTION)', b: true, keep: true },
+        { p: 'The following resolution was passed unanimously as an **Ordinary Resolution** by show of hands:', al: 'j' },
+        { p: '“**RESOLVED THAT** pursuant to Section 152(6) of the Companies Act, 2013, ' + v(x.rot.name) + ' (DIN: ' + v(x.rot.din) + '), who retires by rotation at this meeting and, being eligible, has offered ' + x.rotHim + ' for re-appointment, be and is hereby re-appointed as a Director of the Company, liable to retire by rotation.”', al: 'j' });
       if (audAtAgm) out.push({ p: (++n) + '. APPOINTMENT OF STATUTORY AUDITORS (ORDINARY RESOLUTION)', b: true, keep: true },
         { p: 'The following resolution was passed unanimously as an **Ordinary Resolution** by show of hands:', al: 'j' },
         { p: '“**RESOLVED THAT** pursuant to Section 139 and other applicable provisions of the Companies Act, 2013 read with the Companies (Audit and Auditors) Rules, 2014, ' + x.firmDesc + ', be and are hereby appointed as the Statutory Auditors of the Company for a term of five consecutive years, to hold office from the conclusion of this ' + ord(agmNo) + ' Annual General Meeting till the conclusion of the ' + ord(agmNo + 5) + ' Annual General Meeting to be held in the year ' + (yr(f.agmDate) ? yr(f.agmDate) + 5 : BL) + ', ' + x.remun + '.”', al: 'j' });
@@ -1384,10 +1454,10 @@
   const HOLIDAYS = ['01-26', '08-15', '10-02']; // national holidays — no meetings
   // move a date back to the nearest day that is not a Sunday / national holiday
   const workday = s => { let d = s; for (let i = 0; i < 7 && pd(d); i++) { if (pd(d).getUTCDay() !== 0 && !HOLIDAYS.includes(d.slice(5))) return d; d = addDays(d, -1); } return d; };
-  const isFirstFY = (c, fyEnd) => !!(c && c.incDate && fyEnd && firstFYEnd(c.incDate) === fyEnd);
+  const isFirstFY = (c, fyEnd) => !!(c && c.incDate && fyEnd && firstEnd(c) === fyEnd);
   const fyFromOf = (c, fyEnd) => !fyEnd ? '' : isFirstFY(c, fyEnd) ? c.incDate : addDays(addMonths(fyEnd, -12), 1);
   function fyList(c) {
-    const first = c && c.incDate ? firstFYEnd(c.incDate) : '', out = [];
+    const first = firstEnd(c), out = [];
     for (let y = FY_FIRST; y <= FY_LAST; y++) {
       const end = (y + 1) + '-03-31';
       out.push({ fy: y + '-' + String(y + 1).slice(2), end, ok: !first || end >= first, first: !!first && end === first, from: first && end === first ? c.incDate : y + '-04-01' });
@@ -1396,14 +1466,17 @@
   }
   // AGM for the FY ending fyEnd: within 9 months for the first FY, otherwise 6 months (Sec 96(1))
   const agmDueOf = (c, fyEnd) => fyEnd ? addMonths(fyEnd, isFirstFY(c, fyEnd) ? 9 : 6) : '';
-  const defAgmDate = (c, fyEnd) => workday(agmDueOf(c, fyEnd));
-  const defAgmNotice = agm => agm ? workday(addDays(agm, -24)) : '';          // 21 clear days + 48 hours for service
-  const defAccountsBM = agm => agm ? workday(addDays(defAgmNotice(agm), -1)) : '';
+  // AGM on its due date; an OPC holds no AGM — its sole member adopts the accounts before AOC-4 falls due (180 days)
+  const defAgmDate = (c, fyEnd) => !fyEnd ? '' : entity(c).opc ? workday(addDays(fyEnd, 150)) : workday(agmDueOf(c, fyEnd));
+  // AGM notice: 21 clear days (14 for a Section 8 company) + 48 hours for service by post / email
+  const defAgmNotice = (agm, c) => agm ? workday(addDays(agm, -(entity(c).noticeDays + 3))) : '';
+  // OPC: no AGM (Sec 96(1)) — Board approves the accounts a few days before the sole member's resolution
+  const defAccountsBM = (agm, c) => !agm ? '' : entity(c).opc ? workday(addDays(agm, -5)) : workday(addDays(defAgmNotice(agm, c), -1));
   const defBmNotice = bm => bm ? workday(addDays(bm, -8)) : '';               // 7 days' notice (Sec 173(3))
   // AGM number assuming every AGM was held on time since incorporation
   function agmNumber(c, fyEnd) {
     const fy = yr(fyEnd); if (!fy) return '';
-    if (c.incDate) { const n = fy - yr(firstFYEnd(c.incDate)) + 1; return n > 0 ? String(n) : ''; }
+    if (c.incDate) { const n = fy - yr(firstEnd(c)) + 1; return n > 0 ? String(n) : ''; }
     if (c.lastAgmNo && c.lastAgmDate) { const n = parseInt(c.lastAgmNo, 10) + (fy - (fyStart(c.lastAgmDate))); return n > 0 ? String(n) : ''; }
     return '';
   }
@@ -1418,13 +1491,15 @@
     list = list.filter(d => d >= from && d <= fyEnd);
     if (first) { const m1 = workday(addDays(from, 15)); fixed.push({ date: m1, kind: 'first' }); list = list.filter(d => d > addDays(m1, 30)); }
     else {
-      const acc = opt.accounts || defAccountsBM(opt.prevAgm || defAgmDate(c, addMonths(fyEnd, -12)));
+      const acc = opt.accounts || defAccountsBM(opt.prevAgm || defAgmDate(c, addMonths(fyEnd, -12)), c);
       if (acc && acc >= from && acc <= fyEnd) { fixed.push({ date: acc, kind: 'accounts' }); list = list.filter(d => qtr(d) !== qtr(acc)); }
     }
     const kindOf = d => { const m = pd(d).getUTCMonth() + 1; return m >= 4 && m <= 7 ? 'q1' : m >= 10 && m <= 12 ? 'h1' : m <= 3 ? 'yearend' : 'extra'; };
     let out = fixed.slice();
     if (two) { // small company / OPC: one meeting in each half, at least 90 days apart (Sec 173(5))
-      list.forEach(d => { if (out.length < 2 && out.every(o => Math.abs(pd(d) - pd(o.date)) / 864e5 >= 150)) out.push({ date: workday(d), kind: kindOf(d) }); });
+      // one meeting in every half of the calendar year that the FY touches, at least 90 days apart
+      const half = d => d.slice(0, 4) + (+d.slice(5, 7) <= 6 ? 'a' : 'b');
+      list.slice().sort().forEach(d => { if (!out.some(o => half(o.date) === half(d)) && out.every(o => Math.abs(pd(d) - pd(o.date)) / 864e5 >= 90)) out.push({ date: workday(d), kind: kindOf(d) }); });
     } else {
       list.forEach(d => out.push({ date: workday(d), kind: kindOf(d) }));
       out.sort((a, b) => a.date.localeCompare(b.date));
@@ -1441,16 +1516,25 @@
     const forced = {};
     const set = (k, val) => { if (!val || forced[k]) return; if (!f[k] || f[k] === auto[k]) { f[k] = val; out[k] = val; } };
     const force = (k, val) => { if (!val) return; forced[k] = true; if (f[k] !== val) { f[k] = val; out[k] = val; } };
-    const fyEnd = ctx.fy ? fyEndOf(ctx.fy) : '';
+    const fyEnd = ctx.fy ? fyEndOf(ctx.fy) : '', E = entity(c);
     if (fyEnd && FY_CASES.includes(x.kase)) force('fyEnd', fyEnd);
+    // public and Section 8 companies cannot be small companies; an OPC files MGT-7A with the Rule 8A report
+    if (['annual', 'yearly'].includes(x.kase)) { if (!E.canBeSmall) force('coSize', 'other'); else if (E.opc) force('coSize', 'small'); force('entity', E.key); }
+    // public company: one-third of rotational directors retire at every AGM (Sec 152(6)) — longest in office first
+    if (E.pub && ['annual', 'yearly'].includes(x.kase)) {
+      const ds = (c.directors || []).map((d, i) => ({ i, d })).filter(o => !/independent|nominee|managing|whole/i.test(o.d.desig || ''));
+      ds.sort((a, b) => (a.d.appt || '9999').localeCompare(b.d.appt || '9999') || a.i - b.i);
+      if (ds[0]) set('rotIdx', String(ds[0].i));
+    }
     // actual AGM date from the MCA master data (Date of last AGM, for the FY of the last balance sheet)
     const mcaAgm = end => (c.lastAgmDate && c.lastBsDate && end && c.lastBsDate === end) ? c.lastAgmDate : '';
     const agmBlock = () => {
       set('fyEnd', lastFYEnd());
       set('agmNo', agmNumber(c, f.fyEnd));
+      // OPC: the sole member adopts the accounts before AOC-4 falls due (180 days from the FY end)
       set('agmDate', mcaAgm(f.fyEnd) || defAgmDate(c, f.fyEnd));
-      set('agmNotice', defAgmNotice(f.agmDate));
-      set('bmDate', workday(addDays(f.agmNotice, -1)));
+      if (E.opc) set('bmDate', defAccountsBM(f.agmDate, c));
+      else { set('agmNotice', defAgmNotice(f.agmDate, c)); set('bmDate', workday(addDays(f.agmNotice, -1))); }
       set('bmNotice', defBmNotice(f.bmDate));
     };
     const egm = (base) => { set('egmNotice', addDays(base, 1)); set('egmDate', addDays(f.egmNotice, 22)); };
@@ -1459,7 +1543,7 @@
       case 'agm': agmBlock(); set('consentDate', addDays(f.bmDate, -3)); break;
       case 'casual': set('bmDate', addDays(f.vacDate, 20)); set('bmNotice', addDays(f.bmDate, -8)); set('consentDate', addDays(f.bmDate, -3)); if (f.reason !== 'other') egm(f.bmDate); break;
       case 'annual': agmBlock(); set('coSize', c.size === 'other' ? 'other' : 'small');
-        set('bmList', yl.bmList || dmyList(fyMeetings(c, f.fyEnd, { count: yl.bmCount, accounts: pa.bmDate, prevAgm: pa.agmDate || mcaAgm(addMonths(f.fyEnd, -12)) }))); break;
+        set('bmList', yl.bmList || dmyList(fyMeetings(c, f.fyEnd, { count: yl.bmCount || (E.opc || E.sec8 ? '2' : '4'), accounts: pa.bmDate, prevAgm: pa.agmDate || mcaAgm(addMonths(f.fyEnd, -12)) }))); break;
       case 'dirapp': set('bmNotice', addDays(f.bmDate, -8)); set('consentDate', addDays(f.bmDate, -1)); egm(f.bmDate); break;
       case 'dirres': set('resReceipt', f.resLetter); set('bmDate', addDays(f.resReceipt, 8)); set('bmNotice', f.resReceipt); break;
       case 'allot': set('bmNotice', addDays(f.bmDate, -8)); set('offerDate', addDays(f.bmDate, 1)); set('offerDays', '15'); set('lastDate', addDays(f.offerDate, num(f.offerDays) || 15)); set('alDate', addDays(f.lastDate, 2)); set('alTime', '11:00'); set('alNotice', addDays(f.alDate, -8)); break;
@@ -1477,11 +1561,11 @@
       case 'yearly': {
         set('fyEnd', lastFYEnd());
         const first = isFirstFY(c, f.fyEnd), prevEnd = addMonths(f.fyEnd, -12);
-        set('bmCount', c.type === 'opc' ? '2' : '4'); set('coSize', c.size === 'other' ? 'other' : 'small');
+        set('bmCount', E.opc || E.sec8 ? '2' : '4'); set('coSize', c.size === 'other' ? 'other' : 'small');
         if (!first && f.fyEnd) {
           set('prevAgmNo', pa.agmNo || agmNumber(c, prevEnd));
           set('agmDate', pa.agmDate || mcaAgm(prevEnd) || defAgmDate(c, prevEnd));
-          set('accBm', pa.bmDate || defAccountsBM(f.agmDate));
+          set('accBm', pa.bmDate || defAccountsBM(f.agmDate, c));
         }
         set('bmList', dmyList(fyMeetings(c, f.fyEnd, { count: f.bmCount, accounts: f.accBm })));
         set('regAsOn', f.fyEnd);
@@ -1529,7 +1613,8 @@
     if (K === 'stk2') { need('bmDate', 'Board meeting date'); need('egmDate', 'EGM date'); need('accDate', 'Statement of accounts date'); }
     if (K === 'llp') { need('fyEnd', 'Financial year end'); need('approveDate', 'Date of approval by partners'); }
     if (K === 'yearly') { need('fyEnd', 'Financial year'); if (!x.bms.length) m.push('Dates of Board meetings'); if (!(x.c.directors || []).length) m.push('Directors (client master)'); }
-    if (K === 'annual') { need('fyEnd', 'Financial year end'); need('agmNo', 'AGM number'); need('agmDate', 'AGM date'); need('agmTime', 'AGM time'); need('bmDate', 'Board meeting date'); need('bmTime', 'Board meeting time');
+    if (K === 'annual') { need('fyEnd', 'Financial year end'); if (x.E.opc) need('agmDate', 'Date of the sole member’s resolution'); else { need('agmNo', 'AGM number'); need('agmDate', 'AGM date'); need('agmTime', 'AGM time'); } need('bmDate', 'Board meeting date'); need('bmTime', 'Board meeting time');
+      if (x.E.pub && !x.rot.name) m.push('Director retiring by rotation');
       if (!x.isOPC && !x.d2.name) m.push('Second signing director (tick two signing directors)'); }
     return m;
   }
@@ -1547,8 +1632,8 @@
     } else if (K === 'agm') {
       if (f.fyEnd) row('AGM for FY ended ' + sd(f.fyEnd), addMonths(f.fyEnd, 6), f.agmDate, 'AGM', 'within 6 months of FY end, Sec 96', 'agm');
       row('Notice of Board meeting', addDays(f.bmDate, -7), f.bmNotice, 'Notice', 'at least 7 days, Sec 173(3)');
-      row('Dispatch AGM notice (21 clear days)', addDays(f.agmDate, -22), f.agmNotice, 'Notice', 'Sec 101');
-      row('Board meeting approving notice — before notice date', f.agmNotice || addDays(f.agmDate, -22), f.bmDate, 'Meeting', '');
+      row('Dispatch AGM notice (' + x.E.noticeDays + ' clear days)', addDays(f.agmDate, -(x.E.noticeDays + 1)), f.agmNotice, 'Notice', 'Sec 101');
+      row('Board meeting approving notice — before notice date', f.agmNotice || addDays(f.agmDate, -(x.E.noticeDays + 1)), f.bmDate, 'Meeting', '');
       row('File e-Form ADT-1', addDays(f.agmDate, 15), f.adt1Date, 'Filed', 'within 15 days of AGM, Rule 4(2)', 'adt1');
     } else if (K === 'casual') {
       row('Board to fill casual vacancy', addDays(f.vacDate, 30), f.bmDate, 'Meeting', 'within 30 days, Sec 139(8)', 'board');
@@ -1567,12 +1652,18 @@
     } else if (K === 'dirres') {
       row('Notice of Board meeting', addDays(f.bmDate, -7), f.bmNotice, 'Notice', 'at least 7 days, Sec 173(3)');
       row('File e-Form DIR-12 (cessation)', addDays(x.resEff, 30), f.dir12Date, 'Filed', 'within 30 days of resignation, Sec 168(1) & Rule 15', 'dir12');
-    } else if (K === 'annual') {
+    } else if (K === 'annual' && x.E.opc) {
       const agmDue = x.fyEnd ? addMonths(x.fyEnd, x.firstFY ? 9 : 6) : '';
+      row('Notice of Board meeting (accounts)', addDays(f.bmDate, -7), f.bmNotice, 'Notice', 'at least 7 days, Sec 173(3)');
+      row('Sole member adopts accounts (no AGM for an OPC)', agmDue, f.agmDate, 'Resolution', 'Sec 96(1) & 122(3)');
+      row('File e-Form AOC-4', addDays(x.fyEnd, 180), f.aoc4Date, 'Filed', 'within 180 days of FY end, proviso to Sec 137(1)', 'aoc4');
+      row('File e-Form MGT-7A', addDays(agmDue, 60), f.mgt7Date, 'Filed', 'within 60 days of the date the AGM would have been held, Sec 92(4)', 'mgt7');
+    } else if (K === 'annual') {
+      const agmDue = x.fyEnd ? addMonths(x.fyEnd, x.firstFY ? 9 : 6) : '', nd = x.E.noticeDays;
       row('Hold ' + ord(f.agmNo) + ' AGM', agmDue, f.agmDate, 'AGM', (x.firstFY ? 'within 9 months of first FY end' : 'within 6 months of FY end') + ', Sec 96', 'agm');
       row('Notice of Board meeting (accounts)', addDays(f.bmDate, -7), f.bmNotice, 'Notice', 'at least 7 days, Sec 173(3)');
-      if (f.shortNotice !== 'yes') row('Dispatch AGM notice (21 clear days)', addDays(f.agmDate, -22), f.agmNotice, 'Notice', 'Sec 101');
-      row('Board meeting approving accounts — before AGM notice', f.agmNotice || addDays(f.agmDate, -22), f.bmDate, 'Meeting', 'Sec 134(1)');
+      if (f.shortNotice !== 'yes') row('Dispatch AGM notice (' + nd + ' clear days)', addDays(f.agmDate, -(nd + 1)), f.agmNotice, 'Notice', x.E.sec8 ? 'Sec 101 — 14 days for a Section 8 company' : 'Sec 101');
+      row('Board meeting approving accounts — before AGM notice', f.agmNotice || addDays(f.agmDate, -(nd + 1)), f.bmDate, 'Meeting', 'Sec 134(1)');
       row('File e-Form AOC-4', addDays(f.agmDate, 30), f.aoc4Date, 'Filed', 'within 30 days of AGM, Sec 137', 'aoc4');
       row('File e-Form ' + x.retForm, addDays(f.agmDate, 60), f.mgt7Date, 'Filed', 'within 60 days of AGM, Sec 92(4)', 'mgt7');
     } else if (K === 'allot') {
@@ -1621,16 +1712,34 @@
     return R.map(r => Object.assign(r, { status: r.due && r.actual ? (r.actual <= r.due ? 'ok' : 'late') : '' }));
   }
 
+  // cases that apply to each type of entity
+  function casesFor(c) {
+    const E = entity(c);
+    if (E.llp) return ['llp', 'registers'];
+    return CASES.filter(k => k !== 'llp' && !(E.opc && k === 'agm'));
+  }
+  // minimum Board meetings for the entity type
+  function bmRule(x) {
+    const E = x.E, nd = (x.c.directors || []).filter(d => d.name).length;
+    if (E.opc && nd <= 1) return { min: 0, gap: 0, ref: 'Sec 173(5) proviso — OPC with one director', text: 'not required — OPC with only one director (proviso to Sec 173(5))' };
+    if (E.sec8) return { min: 2, gap: 0, half: true, ref: 'Sec 173(1) as modified for Section 8 companies', text: 'at least one meeting in every six calendar months (Sec 173(1) as modified for Section 8 companies by notification dated 05.06.2015)' };
+    if (E.opc || x.small) return { min: 2, gap: 0, half: true, ref: 'Sec 173(5)', text: 'at least one meeting in each half of the calendar year, at least 90 days apart (Sec 173(5)' + (E.opc ? ' — OPC' : ' — small company') + ')' };
+    return { min: 4, gap: 120, ref: 'Sec 173(1)', text: 'at least four meetings, not more than 120 days between two meetings (Sec 173(1))' };
+  }
   function warnings(ctx) {
     const x = prep(ctx), f = x.f, c = x.c, W = [];
     if (ctx.fy && !FY_CASES.includes(x.kase)) {
       const fe = fyEndOf(ctx.fy), fs = fyFromOf(c, fe), md = f.bmDate || f.egmDate;
       if (md && fe && (md < fs || md > fe)) W.push('The meeting date (' + sd(md) + ') is outside the selected financial year ' + ctx.fy + ' (' + sd(fs) + ' to ' + sd(fe) + '). Check the financial year at the top or the date.');
     }
-    if (ctx.fy && c.incDate && fyEndOf(ctx.fy) < firstFYEnd(c.incDate)) W.push('The company was incorporated on ' + sd(c.incDate) + '; its first financial year ends on ' + sd(firstFYEnd(c.incDate)) + '. Choose FY ' + fyOf(firstFYEnd(c.incDate)) + ' or later.');
+    if (ctx.fy && c.incDate && fyEndOf(ctx.fy) < firstEnd(c)) W.push('The company was incorporated on ' + sd(c.incDate) + '; its first financial year ends on ' + sd(firstEnd(c)) + '. Choose FY ' + fyOf(firstEnd(c)) + ' or later.');
+    const nDirs = (c.directors || []).filter(d => d.name).length;
+    if (nDirs && nDirs < x.E.minDirs && x.kase !== 'dirapp') W.push('Only ' + nDirs + ' director' + (nDirs > 1 ? 's' : '') + ' in the client master — a ' + x.E.label + ' needs at least ' + x.E.minDirs + (x.E.llp ? ' designated partners (LLP Act Sec 7).' : ' (Sec 149(1)).'));
     if (['yearly', 'annual'].includes(x.kase) && x.bms.length) {
-      for (let i = 1; i < x.bms.length; i++) { const g = (pd(x.bms[i]) - pd(x.bms[i - 1])) / 864e5; if (g > 120 && !x.small) W.push('Gap of ' + Math.round(g) + ' days between Board meetings on ' + sd(x.bms[i - 1]) + ' and ' + sd(x.bms[i]) + ' — more than 120 days (Sec 173(1)).'); }
-      if (!x.isOPC && x.bms.length < (x.small ? 2 : 4)) W.push('Only ' + x.bms.length + ' Board meeting(s) in the year — at least ' + (x.small ? '2 (Sec 173(5))' : '4 (Sec 173(1))') + ' required.');
+      const R = bmRule(x);
+      if (R.gap) for (let i = 1; i < x.bms.length; i++) { const g = (pd(x.bms[i]) - pd(x.bms[i - 1])) / 864e5; if (g > R.gap) W.push('Gap of ' + Math.round(g) + ' days between Board meetings on ' + sd(x.bms[i - 1]) + ' and ' + sd(x.bms[i]) + ' — more than ' + R.gap + ' days (' + R.ref + ').'); }
+      if (x.bms.length < R.min) W.push('Only ' + x.bms.length + ' Board meeting(s) in the year — at least ' + R.min + ' required (' + R.ref + ').');
+      if (R.half) { const halves = new Set(x.bms.map(d => d.slice(0, 4) + (+d.slice(5, 7) <= 6 ? 'H1' : 'H2'))); if (halves.size < Math.min(2, x.bms.length)) W.push('Hold the meetings in different halves of the calendar year (' + R.ref + ').'); }
       const off = x.bms.filter(d => pd(d) && (pd(d).getUTCDay() === 0 || HOLIDAYS.includes(d.slice(5))));
       if (off.length) W.push('Board meeting on a Sunday / national holiday: ' + off.map(sd).join(', ') + '.');
     }
@@ -1678,7 +1787,7 @@
     agm: [['apptType', 'Type', [['new', 'New auditor'], ['re', 'Re-appointment']]]],
     casual: [['reason', 'Reason', [['resign', 'Resignation'], ['other', 'Other']]]],
     dirapp: [['apptMode', 'Mode', [['additional', 'Additional Director (Board)'], ['egm', 'At EGM']]], ['regularise', 'Regularise at EGM', [['no', 'No'], ['yes', 'Yes']]]],
-    annual: [['coSize', 'Company', [['small', 'Small company / OPC'], ['other', 'Other company']]], ['rpt', 'Related party contracts', [['no', 'No'], ['yes', 'Yes']]]],
+    annual: [['entity', 'Company type', [['pvt', 'Private company'], ['pub', 'Public company'], ['sec8', 'Section 8 company'], ['opc', 'One Person Company']]], ['coSize', 'Company', [['small', 'Small company / OPC'], ['other', 'Other company']]], ['rpt', 'Related party contracts', [['no', 'No'], ['yes', 'Yes']]]],
     regoffice: [['scope', 'Change', [['local', 'Within city'], ['roc', 'Outside city, same ROC']]]],
     authcap: [['resType', 'Resolution', [['ordinary', 'Ordinary'], ['special', 'Special']]]],
     dpt3: [['audCert', 'Auditor certificate', [['no', 'No'], ['yes', 'Yes']]]],
@@ -1687,15 +1796,16 @@
   };
   const variantKey = (kase, f) => (VARIANTS[kase] || []).map(([k, , opts]) => k + '=' + ((f && f[k]) || opts[0][0])).join('&');
   // documents that repeat per person / are internal working papers keep their fixed format
-  const FIXED = new Set(['offerletter', 'sh1', 'shortnotice', 'stk3', 'stk4', 'adt1', 'dir12', 'annualsheet', 'pas3', 'sh7', 'trsheet', 'inc22', 'inc20a', 'dpt3', 'msme1', 'stk2', 'llpsheet', 'mgt1', 'regdir', 'shlist', 'ycal', 'ynotices', 'yminutes', 'yattend', 'yagmmin', 'ymbp1', 'ydir8', 'ymbp4', 'ymbp2']);
+  const FIXED = new Set(['offerletter', 'sh1', 'shortnotice', 'stk3', 'stk4', 'adt1', 'dir12', 'annualsheet', 'pas3', 'sh7', 'trsheet', 'inc22', 'inc20a', 'dpt3', 'msme1', 'stk2', 'llpsheet', 'mgt1', 'regdir', 'shlist', 'ycal', 'ynotices', 'yminutes', 'yattend', 'yagmmin', 'ymbp1', 'ydir8', 'ymbp4', 'ymbp2', 'ymemberres', 'llpreg']);
   const isFixed = id => FIXED.has(id) || /^decl\d+$/.test(id);
-  const SELECT_KEYS = new Set(['apptType', 'reason', 'apptMode', 'regularise', 'appCat', 'retire', 'appTitle', 'coSize', 'rpt', 'shortNotice', 'amtUnit', 'lh', 'addToMaster', 'updateMaster', 'issueType', 'resType', 'scope', 'premises', 'audCert', 'half', 'ground', 'solvent', 'fromIndex', 'resIndex', 'dir2Index', 'offerDays', 'term', 'autoJson']);
+  const SELECT_KEYS = new Set(['entity', 'rotIdx', 'apptType', 'reason', 'apptMode', 'regularise', 'appCat', 'retire', 'appTitle', 'coSize', 'rpt', 'shortNotice', 'amtUnit', 'lh', 'addToMaster', 'updateMaster', 'issueType', 'resType', 'scope', 'premises', 'audCert', 'half', 'ground', 'solvent', 'fromIndex', 'resIndex', 'dir2Index', 'offerDays', 'term', 'autoJson']);
   const PROSE_KEYS = new Set(['remun', 'appRemun', 'appProf', 'appRel', 'appShares', 'appExp', 'appQual', 'ratio', 'bank', 'dividend', 'reserves', 'material', 'natureChange', 'deposits', 'loans186', 'affairs', 'dirChanges', 'audQual', 'audTerm', 'csr', 'subs', 'energy', 'tech', 'fxEarn', 'fxOut', 'resReason', 'rptNotArm', 'partnerChanges', 'ownerRel', 'udin', 'prevEmail', 'prevAddr', 'reasonText', 'resEffDate', 'leaseDate', 'appOther', 'appInterest', 'allottees', 'subscribers', 'dptRows', 'msmeRows', 'stkItems', 'partners', 'rptList', 'bmList', 'premium', 'certFrom', 'toFolio']);
   function tokenCtx(kase, variant) {
     const c = { name: '{{companyName}}', cin: '{{cin}}', addr: '{{regdOffice}}', email: '{{companyEmail}}', web: '', type: 'private', size: 'small', incDate: '{{incDate}}', authCap: '{{authCap}}', paidCap: '{{paidCap}}', faceValue: '10',
       directors: [{ name: '{{director1}}', din: '{{director1Din}}', desig: 'Director' }, { name: '{{director2}}', din: '{{director2Din}}', desig: 'Director' }], shareholders: [] };
     const a = { firm: '{{caFirm}}', frn: '{{frn}}', partner: '{{caPartner}}', mno: '{{caMno}}', desig: 'Partner', addr: '{{caAddress}}', email: '{{caEmail}}', pan: '{{caPan}}', const: '{{caConstitution}}' };
     const base = Object.assign({}, variant || {});
+    if (base.entity === 'pub') c.type = 'public'; else if (base.entity === 'opc') { c.type = 'opc'; c.directors = c.directors.slice(0, 1); } else if (base.entity === 'sec8') c.sec8 = 'yes';
     const f = typeof Proxy === 'function' ? new Proxy(base, { get: (t, k) => typeof k !== 'string' ? undefined : (k in t) ? t[k] : (SELECT_KEYS.has(k) || PROSE_KEYS.has(k)) ? '' : '{{' + k + '}}', has: () => true }) : base;
     return { kase, c, a, d: c.directors[0], ds: [c.directors[0]], f, T: true };
   }
@@ -1729,7 +1839,8 @@
     const c = x.c, a = x.a, d = x.d || {}, d2 = x.d2 || {}, r = x.res || {};
     const base = { companyname: c.name, cin: c.cin, regdoffice: oneLine(c.addr), companyemail: c.email, incdate: c.incDate, authcap: c.authCap, paidcap: c.paidCap,
       cafirm: a.firm, frn: a.frn, capartner: a.partner, camno: a.mno, caaddress: oneLine(a.addr), caemail: a.email, capan: a.pan, caconstitution: a.const,
-      director1: d.name, director1din: d.din, director2: d2.name, director2din: d2.din, resigningdirector: r.name, resigningdirectordin: r.din, previousauditor: prevDesc(x.f) };
+      director1: d.name, director1din: d.din, director2: d2.name, director2din: d2.din, resigningdirector: r.name, resigningdirectordin: r.din, previousauditor: prevDesc(x.f),
+      retiringdirector: (x.rot || {}).name, retiringdirectordin: (x.rot || {}).din, solemember: x.member };
     const tr = (c.shareholders || [])[parseInt(x.f.fromIndex, 10)]; if (tr) { base.transferor = tr.name; base.transferorfolio = tr.folio; }
     let val;
     const vals = Object.keys(x.vals || {}).find(n => n.toLowerCase() === low);
@@ -1783,6 +1894,6 @@
 
   return { CASES, CASE_TITLE, CASE_SHORT, LH_CO, LH_CA, LH_NONE, LH_PLAIN, BL, docDefs, missing, timeline, warnings, fileName, defaults, agmNumber,
     VARIANTS, variantKey, templateText, templateDocs, placeholders, isFixed,
-    FY_CASES, fyList, fyEndOf, fyOf, fyMeetings, isFirstFY, agmDueOf,
+    FY_CASES, fyList, fyEndOf, fyOf, fyMeetings, isFirstFY, agmDueOf, entity, casesFor,
     helpers: { ld, sd, tm, ord, addDays, addMonths, oneLine, fyStart, firstFYEnd, pd, parseDMY } };
 });

@@ -198,13 +198,16 @@ const FIELDS = {
     <div><label>Financial Year Ended <span class="req">*</span></label><input type="date" data-f="fyEnd"><div class="hint">Usually 31 March</div></div>
     <div><label>Company Size <span class="req">*</span></label><select data-f="coSize"><option value="small">Small company / OPC — MGT-7A, abridged Board's Report (Rule 8A)</option><option value="other">Other — MGT-7, full Board's Report (Rule 8)</option></select></div>
     </div>
-    <h3>Annual General Meeting</h3><div class="grid">
+    <div data-show="opc"><h3>Adoption of Accounts by the Sole Member <small class="hint">(OPC — no AGM, Sec 96(1))</small></h3><div class="grid">
+    <div><label>Date of sole member's resolution <span class="req">*</span></label><input type="date" data-f="agmDate"><div class="hint">Sec 122(3) — before AOC-4 is due (180 days from FY end)</div></div></div></div>
+    <div data-show="hasagm"><h3>Annual General Meeting</h3><div class="grid">
     <div><label>AGM Number <span class="req">*</span></label><input type="number" min="1" data-f="agmNo" placeholder="1 for first AGM"></div>
     <div><label>AGM Date <span class="req">*</span></label><input type="date" data-f="agmDate"></div>
     <div><label>AGM Time <span class="req">*</span></label><input type="time" data-f="agmTime" data-def="11:00"></div>
     <div><label>Date of AGM Notice</label><input type="date" data-f="agmNotice"></div>
     <div><label>Shorter notice?</label><select data-f="shortNotice"><option value="no">No — 21 clear days' notice</option><option value="yes">Yes — with consent of 95% members</option></select></div>
-    <div class="span3"><label>AGM Venue</label><input data-f="agmVenue" placeholder="Leave blank to use the Registered Office"></div></div>
+    <div class="span3"><label>AGM Venue</label><input data-f="agmVenue" placeholder="Leave blank to use the Registered Office"></div>
+    <div data-show="public"><label>Director retiring by rotation <span class="req">*</span></label><select data-f="rotIdx" data-dirs></select><div class="hint">Public company — Sec 152(6); longest in office is chosen by default</div></div></div></div>
     ${BM(true)}
     <div class="grid" style="margin-top:12px"><div class="span3"><label>Dates of all Board meetings held during the year</label><textarea data-f="bmList" placeholder="One date per line, e.g. 15/05/2025"></textarea><div class="hint">Filled automatically for the chosen FY (same dates as Yearly Records) — printed in the Board's Report and MGT-7.</div></div></div>
     <h3>Financial Highlights (for Board's Report)</h3><div class="grid">
@@ -315,11 +318,14 @@ const FIELDS = {
     <div class="span2"><label>Dates of Board meetings in this FY <span class="req">*</span></label><textarea data-f="bmList" rows="5" placeholder="One date per line, e.g. 20/06/2025"></textarea><div class="hint">Filled automatically for the chosen FY (no Sundays / national holidays). Change any date; the notices, minutes and Board's Report follow.</div></div>
     <div><label>Time of meetings</label><input type="time" data-f="bmTime" data-def="11:00"><label style="margin-top:10px">Venue</label><input data-f="bmVenue" placeholder="Blank = Registered Office"></div>
     <div data-show="notfirst"><label>Meeting approving last year's accounts</label><input type="date" data-f="accBm"><div class="hint">Its minutes carry the accounts, Board's Report and AGM items</div></div></div>
-    <div data-show="notfirst"><h3>AGM held during this FY (for the previous FY)</h3><div class="grid">
+    <div data-show="notfirst-opc"><h3>Sole member's resolution adopting last year's accounts <small class="hint">(OPC — no AGM)</small></h3><div class="grid">
+    <div><label>Date of resolution</label><input type="date" data-f="agmDate"></div></div></div>
+    <div data-show="notfirst-agm"><h3>AGM held during this FY (for the previous FY)</h3><div class="grid">
     <div><label>AGM Number</label><input type="number" min="1" data-f="prevAgmNo"></div>
     <div><label>AGM Date</label><input type="date" data-f="agmDate"></div>
     <div><label>AGM Time</label><input type="time" data-f="agmTime" data-def="11:00"></div>
-    <div class="span3"><label>AGM Venue</label><input data-f="agmVenue" placeholder="Blank = Registered Office"></div></div></div>
+    <div class="span2"><label>AGM Venue</label><input data-f="agmVenue" placeholder="Blank = Registered Office"></div>
+    <div data-show="public"><label>Director retiring by rotation</label><select data-f="rotIdx" data-dirs></select></div></div></div>
     <h3>Registers</h3><div class="grid"><div><label>Registers as on</label><input type="date" data-f="regAsOn"></div></div>
     <p class="hint">Dates are worked out from the financial year and the date of incorporation, assuming every AGM was held on time. Minutes of the first meeting after incorporation, the accounts meeting (with auditor appointment at the 1st, 6th, 11th … AGM) and the quarterly reviews are written automatically.</p>`,
   registers: `<div class="grid"><div><label>Registers as on</label><input type="date" data-f="asOn"></div></div>
@@ -349,7 +355,7 @@ PAGES.generate = async params => {
   // next FY to file after the last balance sheet on MCA (e.g. 31/03/2025 → FY 2025-26)
   const nextFY = wc.lastBsDate ? DC.fyOf(H.addDays(wc.lastBsDate, 1)) : '';
   if (!okFY(G.fy)) G.fy = okFY(lsGet('nscrm.fy.' + wc.id)) ? lsGet('nscrm.fy.' + wc.id) : okFY(nextFY) ? nextFY : okFY(lastFY()) ? lastFY() : ((fys.find(z => z.ok) || {}).fy || lastFY());
-  $('view').innerHTML = `<div class="pagehead"><div><a class="backlink" href="#/clients">← All clients</a><h1>${esc(wc.name)}</h1><p class="sub">${wc.type === 'llp' ? 'LLPIN' : 'CIN'}: ${esc(wc.cin || '—')} · Choose a case, fill the details and download Word files on letterhead.</p></div><div class="row"><span class="saved" id="savedNote"></span><a class="btn ghostlink sm" href="#/clients?edit=${wc.id}">Edit client</a></div></div>
+  $('view').innerHTML = `<div class="pagehead"><div><a class="backlink" href="#/clients">← All clients</a><h1>${esc(wc.name)}</h1><p class="sub"><span class="pill brand">${esc(DC.entity(wc).label.replace(/^./, ch => ch.toUpperCase()))}</span> ${wc.type === 'llp' ? 'LLPIN' : 'CIN'}: ${esc(wc.cin || '—')} · Choose a case, fill the details and download Word files on letterhead.</p></div><div class="row"><span class="saved" id="savedNote"></span><a class="btn ghostlink sm" href="#/clients?edit=${wc.id}">Edit client</a></div></div>
   <div class="card fycard"><h2><span class="step">1</span>Financial Year</h2><div class="row" style="align-items:flex-end;gap:16px;flex-wrap:wrap">
    <div style="min-width:260px"><label>Documents are for the financial year <span class="req">*</span></label><select id="g-fy">${fys.map(z => '<option value="' + z.fy + '"' + (z.ok ? '' : ' disabled') + '>FY ' + z.fy + (z.first ? ' — first FY (from ' + H.sd(z.from) + ')' : '') + (z.ok ? '' : ' — before incorporation') + '</option>').join('')}</select></div>
    <div class="hint" id="g-fyinfo" style="flex:1;min-width:260px"></div></div></div>
@@ -375,6 +381,12 @@ PAGES.generate = async params => {
     G.dirIdx = e.target.checked ? [...G.dirIdx.filter(n => n !== i), i] : G.dirIdx.filter(n => n !== i);
     G.dirIndex = G.dirIdx[0] || 0; docKey = ''; queueSave(); paint();
   };
+  const allowed = DC.casesFor(wc);
+  if (G.kase && !allowed.includes(G.kase)) G.kase = '';
+  $$('.case').forEach(el => { if (!allowed.includes(el.dataset.case)) el.remove(); });
+  $$('.cg-title').forEach(t => { const box = t.nextElementSibling; if (box && !box.children.length) { box.remove(); t.remove(); } });
+  const WE = DC.entity(wc);
+  if (WE.llp || WE.opc) $$('.cg-title')[0] && $$('.cg-title')[0].insertAdjacentHTML('beforebegin', '<p class="hint" style="margin-top:-4px">' + (WE.llp ? 'Showing the cases that apply to an LLP. Company cases (Board meetings, AGM, AOC-4 / MGT-7) do not apply.' : 'One Person Company: no AGM (Sec 96(1)) — the sole member adopts the accounts by resolution (Sec 122(3)), so “Auditor at AGM” is hidden.') + '</p>');
   $$('.case').forEach(el => el.onclick = async () => {
     await flushSave(); G.kase = el.dataset.case;
     const firstFy = (fys.find(z => z.first) || {}).fy; // incorporation-related cases belong to the first FY
@@ -470,7 +482,10 @@ function paint() {
   vis('reason-other', f.reason === 'other'); vis('reason-resign', f.reason !== 'other'); vis('prev-agm', f.apptType !== 're');
   vis('regularise', f.apptMode !== 'egm'); vis('egm', f.apptMode === 'egm' || f.regularise === 'yes');
   vis('rpt', f.rpt === 'yes'); vis('full', f.coSize === 'other'); vis('roc', f.scope === 'roc');
-  vis('notfirst', !DC.isFirstFY(c, DC.fyEndOf(G.fy)));
+  const E = DC.entity(c), nf = !DC.isFirstFY(c, DC.fyEndOf(G.fy));
+  vis('notfirst', nf); vis('notfirst-opc', nf && E.opc); vis('notfirst-agm', nf && !E.opc);
+  vis('opc', E.opc); vis('hasagm', !E.opc); vis('public', E.pub);
+  $$('#g-form [data-f="coSize"]').forEach(el => { const lock = E.opc || !E.canBeSmall; el.disabled = lock; el.title = lock ? (E.opc ? 'An OPC files MGT-7A with the Rule 8A Board’s Report' : (E.sec8 ? 'A Section 8 company' : 'A public company') + ' cannot be a small company (Sec 2(85)) — MGT-7 and full Board’s Report') : ''; });
   paintTimeline(); paintDocs();
 }
 function bindAppSign() {

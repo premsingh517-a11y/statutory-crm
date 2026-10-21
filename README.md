@@ -37,6 +37,12 @@ gold background and can be changed; changing one date updates the dates that dep
 - **Board meetings per FY** are filled automatically (first meeting within 30 days of incorporation, the accounts meeting before the AGM, quarterly reviews, gap ≤ 120 days) and used in the Board's Report and MGT-7.
 - **Yearly Records** case: notices and minutes of all Board meetings, attendance register, AGM minutes, MBP-1 and DIR-8 for each director, MGT-1, Register of Directors & KMP, MBP-2 and MBP-4 for the chosen FY.
 - **Upload MCA Master Data** (Clients page or inside the client form): the PDF or Excel downloaded from the MCA website fills the name, CIN, incorporation date, type, Section 8, small company, registered office, email, capital, ROC, status, last AGM date, last balance sheet date, last AGM number and directors with DIN and appointment date. Scanned PDFs are read with OCR on the computer itself (no internet). The workspace then starts at the next FY to file.
+- **Rules by type of entity** (from the client master):
+  - *Private*: small company → MGT-7A & Rule 8A report; otherwise MGT-7 & full report; 4 Board meetings (2 allowed for small).
+  - *Public*: never small; director retiring by rotation (Sec 152(6)) in the Board notice, AGM notice, MGT-11, CTC and minutes; Independent Director / NRC statements; AGM quorum of 5; minimum 3 directors.
+  - *Section 8*: never small (MGT-7, full report); Income and Expenditure Account; no dividend; 14 clear days' AGM notice; 2 Board meetings (once in every six calendar months); Board quorum of 8 or 25%.
+  - *OPC*: no AGM — sole member's resolution under Sec 122(3); AOC-4 within 180 days of the FY end; MGT-7A within 60 days of the AGM due date; "Auditor at AGM" hidden.
+  - *LLP*: only LLP cases (Form 11 & 8, Register of Partners — Form 4A); first FY may run to the next 31 March if incorporated after 30 September.
 - **CA partner signature:** upload it in CA Firms; it is printed on CA documents.
 - **Edit Templates** (admin): change the wording of any document per case and option, with `{{placeholders}}` filled from the client, CA firm and case details. "Reset to standard" brings back the built-in wording.
 - Preview every document before downloading. Download one Word file, or all of them in a ZIP.

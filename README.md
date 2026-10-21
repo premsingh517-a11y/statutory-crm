@@ -32,6 +32,11 @@ gold background and can be changed; changing one date updates the dates that dep
 - One shared client list and CA firm list for the whole team (stored in PostgreSQL).
 - Meeting details are auto-saved per client and per case, so anyone in the team can continue the work.
 - Client-first workflow: open a client from **Clients**, pick a case and download the documents. Each case shows its compliance timeline (Board meeting within 30 days, ADT-1 within 15 days, 21-day notice, etc.).
+- **Financial year first:** the client workspace starts with the FY (2021-22 to 2030-31). Records are saved per client, case and FY. Dates follow the FY: AGM due date (9 months after the first FY, otherwise 6 months), AGM notice, Board meeting and its notice, all moved off Sundays and national holidays. Change the AGM date and the other auto-filled dates move with it.
+- **AGM number** is worked out from the date of incorporation, assuming every AGM was held on time.
+- **Board meetings per FY** are filled automatically (first meeting within 30 days of incorporation, the accounts meeting before the AGM, quarterly reviews, gap ≤ 120 days) and used in the Board's Report and MGT-7.
+- **Yearly Records** case: notices and minutes of all Board meetings, attendance register, AGM minutes, MBP-1 and DIR-8 for each director, MGT-1, Register of Directors & KMP, MBP-2 and MBP-4 for the chosen FY.
+- **CA partner signature:** upload it in CA Firms; it is printed on CA documents.
 - **Edit Templates** (admin): change the wording of any document per case and option, with `{{placeholders}}` filled from the client, CA firm and case details. "Reset to standard" brings back the built-in wording.
 - Preview every document before downloading. Download one Word file, or all of them in a ZIP.
 - Company letterhead and CA letterhead (with logo), or blank space for pre-printed letterhead.

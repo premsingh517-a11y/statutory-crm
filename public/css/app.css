@@ -197,3 +197,7 @@ a.clink{color:inherit;text-decoration:none}a.clink:hover b{color:var(--brand);te
 .chip:hover{border-color:var(--gold)}
 .tplhelp div{margin-bottom:5px}.tplhelp code{background:#f1eeed;padding:0 4px;border-radius:4px;font-size:11.5px}
 @media (max-width:900px){.tplwrap{grid-template-columns:1fr}.tplside{border-left:0;padding-left:0;max-height:none}}
+/* financial year */
+.fycard{border-left:4px solid var(--gold)}
+.fycard select{font-weight:700;font-size:15px}
+input.locked{background:#f6f2f0;color:var(--ink2);cursor:not-allowed}

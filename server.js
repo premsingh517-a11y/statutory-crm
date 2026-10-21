@@ -72,6 +72,7 @@ function cleanCA(b) {
   CA_FIELDS.forEach(k => { a[k] = str(b[k], k === 'addr' ? 600 : 200); });
   a.frn = a.frn.toUpperCase(); a.pan = a.pan.toUpperCase();
   a.logo = cleanLogo(b.logo);
+  a.sign = cleanLogo(b.sign); // signing partner's signature
   return a;
 }
 // meeting / case details: any simple field name; values are text, fields ending in "Sign" are signature images
@@ -341,21 +342,30 @@ async function letterheadFile(owner, id) {
   return rows.length ? Buffer.from(rows[0].data, 'base64') : null;
 }
 
-/* ---------------- filings (saved meeting details) ---------------- */
+/* ---------------- filings (saved meeting details) — one record per client, case and financial year ---------------- */
+const validFY = fy => /^20\d{2}-\d{2}$/.test(String(fy || '')) ? String(fy) : '';
+const fkey = (kase, fy) => validFY(fy) ? kase + '@' + validFY(fy) : kase;
+const fyOfDate = s => { const m = /^(\d{4})-(\d{2})/.exec(String(s || '')); if (!m) return ''; const y = +m[2] >= 4 ? +m[1] : +m[1] - 1; return y + '-' + String(y + 1).slice(2); };
 app.get('/api/filings', requireLogin, async (req, res) => {
   const { rows } = await db.query(`SELECT f.client_id, f.case_type, f.data, f.updated_at, u.name AS updated_by, c.data->>'name' AS client_name
     FROM filings f JOIN clients c ON c.id=f.client_id LEFT JOIN users u ON u.id=f.updated_by ORDER BY f.updated_at DESC`);
-  res.json(rows.map(r => ({ clientId: r.client_id, kase: r.case_type, clientName: r.client_name, data: r.data, updatedAt: r.updated_at, updatedBy: r.updated_by })));
+  res.json(rows.map(r => { const [kase, fy] = r.case_type.split('@'); return { clientId: r.client_id, kase, fy: fy || '', clientName: r.client_name, data: r.data, updatedAt: r.updated_at, updatedBy: r.updated_by }; }));
 });
 app.get('/api/filings/:clientId/:kase', requireLogin, async (req, res) => {
-  const { rows } = await db.query('SELECT data FROM filings WHERE client_id=$1 AND case_type=$2', [parseInt(req.params.clientId, 10), req.params.kase]);
+  const cid = parseInt(req.params.clientId, 10), kase = req.params.kase, fy = validFY(req.query.fy);
+  let { rows } = await db.query('SELECT data FROM filings WHERE client_id=$1 AND case_type=$2', [cid, fkey(kase, fy)]);
+  if (!rows[0] && fy) { // older records were saved without a financial year: show them in the FY they belong to
+    const old = await db.query('SELECT data FROM filings WHERE client_id=$1 AND case_type=$2', [cid, kase]);
+    const d = old.rows[0] && old.rows[0].data;
+    if (d && fyOfDate(d.fyEnd ? d.fyEnd.replace(/-03-31$/, '-03-30') : (d.bmDate || d.agmDate || d.egmDate || d.alDate || '')) === fy) rows = old.rows;
+  }
   res.json(rows[0] ? rows[0].data : null);
 });
 async function saveFiling(clientId, kase, body, uid) {
   const dirIdx = (Array.isArray(body.dirIdx) ? body.dirIdx : []).map(n => parseInt(n, 10)).filter(n => n >= 0 && n < 50).slice(0, 15);
-  const data = Object.assign(cleanForm(body.form), { caId: parseInt(body.caId, 10) || null, dirIndex: parseInt(body.dirIndex, 10) || 0, dirIdx });
+  const data = Object.assign(cleanForm(body.form), { caId: parseInt(body.caId, 10) || null, dirIndex: parseInt(body.dirIndex, 10) || 0, dirIdx, fy: validFY(body.fy) });
   await db.query(`INSERT INTO filings (client_id, case_type, data, updated_by) VALUES ($1,$2,$3,$4)
-    ON CONFLICT (client_id, case_type) DO UPDATE SET data=EXCLUDED.data, updated_by=EXCLUDED.updated_by, updated_at=now()`, [clientId, kase, data, uid]);
+    ON CONFLICT (client_id, case_type) DO UPDATE SET data=EXCLUDED.data, updated_by=EXCLUDED.updated_by, updated_at=now()`, [clientId, fkey(kase, body.fy), data, uid]);
   return data;
 }
 app.put('/api/filings/:clientId/:kase', requireLogin, async (req, res) => {
@@ -379,7 +389,8 @@ app.post('/api/generate', requireLogin, async (req, res) => {
   const idx = (Array.isArray(b.dirIdx) && b.dirIdx.length ? b.dirIdx : [b.dirIndex || 0]).map(n => parseInt(n, 10));
   const ds = idx.map(i => (c.directors || [])[i]).filter(Boolean), d = ds[0] || {};
   const f = cleanForm(b.form);
-  const ctx = { kase, c, a, d, ds, f };
+  const fy = validFY(b.fy);
+  const ctx = { kase, c, a, d, ds, f, fy };
   await saveFiling(clientId, kase, b, req.session.user.id);
   const lhFiles = { company: await letterheadFile('clients', clientId), ca: await letterheadFile('cas', caId) };
 
@@ -408,7 +419,7 @@ app.post('/api/generate', requireLogin, async (req, res) => {
     else if (kase === 'authcap' && f.newCap) { upd.authCap = f.newCap; note = 'authorised capital ' + f.newCap; }
     if (note) {
       await db.query('UPDATE clients SET data=$1, updated_by=$2, updated_at=now() WHERE id=$3', [upd, req.session.user.id, clientId]);
-      await db.query("UPDATE filings SET data = data || $1 WHERE client_id=$2 AND case_type=$3", [{ updateMaster: 'done' }, clientId, kase]);
+      await db.query("UPDATE filings SET data = data || $1 WHERE client_id=$2 AND case_type=$3", [{ updateMaster: 'done' }, clientId, fkey(kase, fy)]);
       db.log(req.session.user.id, 'client.update', c.name + ': ' + note);
       res.set('X-Masters-Changed', '1');
     }

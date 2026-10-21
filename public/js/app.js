@@ -104,7 +104,12 @@ function route() {
 /* =====================================================================
    GENERATE
    ===================================================================== */
-const G = { clientId: '', caId: '', dirIndex: 0, dirIdx: [0], kase: '', form: {} };
+const G = { clientId: '', caId: '', dirIndex: 0, dirIdx: [0], kase: '', form: {}, fy: '', link: {} };
+// default financial year: the last completed FY (e.g. in Oct 2026 → 2025-26)
+const lastFY = () => { const t = new Date().toISOString().slice(0, 10), y = +t.slice(5, 7) >= 4 ? +t.slice(0, 4) : +t.slice(0, 4) - 1; return (y - 1) + '-' + String(y).slice(2); };
+const prevFY = fy => { const y = parseInt(fy, 10); return y ? (y - 1) + '-' + String(y).slice(2) : ''; };
+const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 let saveTimer = null, docKey = '';
 const docSel = {};
 const DIRSEL = 'data-dirs';
@@ -201,7 +206,7 @@ const FIELDS = {
     <div><label>Shorter notice?</label><select data-f="shortNotice"><option value="no">No — 21 clear days' notice</option><option value="yes">Yes — with consent of 95% members</option></select></div>
     <div class="span3"><label>AGM Venue</label><input data-f="agmVenue" placeholder="Leave blank to use the Registered Office"></div></div>
     ${BM(true)}
-    <div class="grid" style="margin-top:12px"><div class="span3"><label>Dates of all Board meetings held during the year</label><textarea data-f="bmList" placeholder="One date per line, e.g. 15/05/2025"></textarea></div></div>
+    <div class="grid" style="margin-top:12px"><div class="span3"><label>Dates of all Board meetings held during the year</label><textarea data-f="bmList" placeholder="One date per line, e.g. 15/05/2025"></textarea><div class="hint">Filled automatically for the chosen FY (same dates as Yearly Records) — printed in the Board's Report and MGT-7.</div></div></div>
     <h3>Financial Highlights (for Board's Report)</h3><div class="grid">
     <div><label>Amounts shown in</label><select data-f="amtUnit"><option>Amount in Rs.</option><option>Rs. in Lakhs</option><option>Rs. in Thousands</option></select></div><div></div><div></div>
     <div><label>Total revenue — this year</label><input data-f="revCur"></div><div><label>Total revenue — previous year</label><input data-f="revPrev"></div><div></div>
@@ -302,6 +307,21 @@ const FIELDS = {
     <div><label>Solvency</label><select data-f="solvent"><option value="yes">Able to pay debts in full</option><option value="no">Not able to pay debts in full</option></select></div>
     <div><label>Changes in partners during the year</label><input data-f="partnerChanges" placeholder="None"></div></div>
     ${AFTER([['form11Srn', 'form11Date', 'Form 11'], ['form8Srn', 'form8Date', 'Form 8']])}`,
+  yearly: `<div class="grid">
+    <div><label>Company Size</label><select data-f="coSize"><option value="small">Small company / OPC</option><option value="other">Other company</option></select></div>
+    <div><label>Board meetings in the year</label><select data-f="bmCount"><option value="4">4 — quarterly (Sec 173(1), gap ≤ 120 days)</option><option value="2">2 — small company / OPC (Sec 173(5))</option></select></div>
+    <div><label>Chairperson of meetings</label><select data-f="chair" data-dirs></select></div></div>
+    <h3>Board Meetings</h3><div class="grid">
+    <div class="span2"><label>Dates of Board meetings in this FY <span class="req">*</span></label><textarea data-f="bmList" rows="5" placeholder="One date per line, e.g. 20/06/2025"></textarea><div class="hint">Filled automatically for the chosen FY (no Sundays / national holidays). Change any date; the notices, minutes and Board's Report follow.</div></div>
+    <div><label>Time of meetings</label><input type="time" data-f="bmTime" data-def="11:00"><label style="margin-top:10px">Venue</label><input data-f="bmVenue" placeholder="Blank = Registered Office"></div>
+    <div data-show="notfirst"><label>Meeting approving last year's accounts</label><input type="date" data-f="accBm"><div class="hint">Its minutes carry the accounts, Board's Report and AGM items</div></div></div>
+    <div data-show="notfirst"><h3>AGM held during this FY (for the previous FY)</h3><div class="grid">
+    <div><label>AGM Number</label><input type="number" min="1" data-f="prevAgmNo"></div>
+    <div><label>AGM Date</label><input type="date" data-f="agmDate"></div>
+    <div><label>AGM Time</label><input type="time" data-f="agmTime" data-def="11:00"></div>
+    <div class="span3"><label>AGM Venue</label><input data-f="agmVenue" placeholder="Blank = Registered Office"></div></div></div>
+    <h3>Registers</h3><div class="grid"><div><label>Registers as on</label><input type="date" data-f="regAsOn"></div></div>
+    <p class="hint">Dates are worked out from the financial year and the date of incorporation, assuming every AGM was held on time. Minutes of the first meeting after incorporation, the accounts meeting (with auditor appointment at the 1st, 6th, 11th … AGM) and the quarterly reviews are written automatically.</p>`,
   registers: `<div class="grid"><div><label>Registers as on</label><input type="date" data-f="asOn"></div></div>
     <p class="hint">The Register of Members and the Register of Directors are pre-filled from the client master (shareholders and directors). Columns the portal does not hold are left blank to complete by hand.</p>`,
 };
@@ -312,37 +332,52 @@ const CASE_GROUPS = [
   ['Auditor Appointment · e-Form ADT-1', [['first', 'First Auditor', 'Board appoints within 30 days of incorporation — Sec 139(6)'], ['agm', 'Appointment at AGM', 'Members appoint at AGM for 5 years — Sec 139(1)'], ['casual', 'Casual Vacancy', 'Resignation / other vacancy filled by Board — Sec 139(8)']]],
   ['Director Change · e-Form DIR-12', [['dirapp', 'Director Appointment', 'DIR-2, DIR-8, MBP-1, resolution, appointment letter — Sec 152 / 161'], ['dirres', 'Director Resignation', 'Resignation letter, resolution, acknowledgement — Sec 168']]],
   ['Annual Filing · AOC-4 & MGT-7 / 7A', [['annual', 'AOC-4 & MGT-7 / 7A', 'Board’s Report, AGM notice, MGT-11, resolutions, shareholder list (no balance sheet / audit report)']]],
+  ['Yearly Records (FY-wise)', [['yearly', 'Board Meetings, Minutes & Registers', 'All Board meeting notices & minutes, attendance, AGM minutes, MBP-1, DIR-8, MGT-1, Register of Directors, MBP-2, MBP-4 for the chosen FY']]],
   ['Share Capital', [['allot', 'Rights Issue & Allotment', 'Offer letters, allotment resolution, SH-1 certificates, PAS-3 — Sec 62(1)(a)'], ['authcap', 'Increase Authorised Capital', 'Board & EGM resolutions, altered Clause V, SH-7 — Sec 61 / 64'], ['transfer', 'Share Transfer', 'Form SH-4, Board approval, letter to transferee — Sec 56']]],
   ['ROC Compliance', [['regoffice', 'Shift Registered Office', 'Board / special resolution, owner NOC, INC-22 — Sec 12'], ['inc20a', 'Commencement of Business', 'Board resolution, director declaration, INC-20A — Sec 10A'], ['dpt3', 'DPT-3 (Deposits Return)', 'Statement of exempt receipts, director declarations, auditor certificate'], ['msme1', 'MSME-1 (Half-yearly)', 'Statement of dues to micro & small suppliers over 45 days']]],
   ['Closure, LLP & Registers', [['stk2', 'Strike Off (STK-2)', 'Resolutions, STK-3 bonds, STK-4 affidavits, statement of accounts — Sec 248(2)'], ['llp', 'LLP Form 11 & Form 8', 'Partners’ resolution, statement of solvency, data sheet'], ['registers', 'Statutory Registers', 'Register of Members (MGT-1) and Register of Directors & KMP']]],
 ];
 
 PAGES.generate = async params => {
-  if (params.get('client')) { if (String(params.get('client')) !== String(G.clientId)) { G.kase = ''; G.dirIdx = [0]; G.dirIndex = 0; } G.clientId = params.get('client'); G.kase = params.get('case') || G.kase; }
+  if (params.get('client')) { if (String(params.get('client')) !== String(G.clientId)) { G.kase = ''; G.dirIdx = [0]; G.dirIndex = 0; G.fy = ''; } G.clientId = params.get('client'); G.kase = params.get('case') || G.kase; }
+  if (params.get('fy')) G.fy = params.get('fy');
   if (!S.clients.some(c => String(c.id) === String(G.clientId))) G.clientId = '';
   if (G.kase && !DC.CASES.includes(G.kase)) G.kase = '';
   const wc = client();
   if (!wc) { location.hash = '#/clients'; return; }
+  const fys = DC.fyList(wc), okFY = fy => fys.some(z => z.fy === fy && z.ok);
+  if (!okFY(G.fy)) G.fy = okFY(lsGet('nscrm.fy.' + wc.id)) ? lsGet('nscrm.fy.' + wc.id) : okFY(lastFY()) ? lastFY() : ((fys.find(z => z.ok) || {}).fy || lastFY());
   $('view').innerHTML = `<div class="pagehead"><div><a class="backlink" href="#/clients">← All clients</a><h1>${esc(wc.name)}</h1><p class="sub">${wc.type === 'llp' ? 'LLPIN' : 'CIN'}: ${esc(wc.cin || '—')} · Choose a case, fill the details and download Word files on letterhead.</p></div><div class="row"><span class="saved" id="savedNote"></span><a class="btn ghostlink sm" href="#/clients?edit=${wc.id}">Edit client</a></div></div>
-  <div class="card"><h2><span class="step">1</span>Signatories</h2><div class="grid">
+  <div class="card fycard"><h2><span class="step">1</span>Financial Year</h2><div class="row" style="align-items:flex-end;gap:16px;flex-wrap:wrap">
+   <div style="min-width:260px"><label>Documents are for the financial year <span class="req">*</span></label><select id="g-fy">${fys.map(z => '<option value="' + z.fy + '"' + (z.ok ? '' : ' disabled') + '>FY ' + z.fy + (z.first ? ' — first FY (from ' + H.sd(z.from) + ')' : '') + (z.ok ? '' : ' — before incorporation') + '</option>').join('')}</select></div>
+   <div class="hint" id="g-fyinfo" style="flex:1;min-width:260px"></div></div></div>
+  <div class="card"><h2><span class="step">2</span>Signatories</h2><div class="grid">
    <div id="g-cawrap"><label id="g-calabel">Auditor (CA Firm) <span class="req">*</span></label><select id="g-ca"></select></div>
    <div><label>Signing Director(s) — company documents <span class="req">*</span></label><div id="g-dir" class="dirpick"></div><div class="hint">Tick one or more. Two are needed for the Board's Report, financial statements and share certificates.</div></div></div>
    <div id="g-info" class="hint" style="margin-top:8px"></div></div>
-  <div class="card"><h2><span class="step">2</span>Choose Case</h2>${CASE_GROUPS.map(([t, list]) => '<div class="cg-title">' + t + '</div><div class="cases">' + list.map(([k, n, s]) => '<div class="case" data-case="' + k + '"><b>' + n + '</b><span>' + s + '</span></div>').join('') + '</div>').join('')}</div>
-  <div class="card hidden" id="g-form"><h2><span class="step">3</span><span id="g-title"></span></h2><div id="g-fields"></div>${COMMON}<h3>Compliance Timeline</h3><div class="timeline" id="g-timeline"></div></div>
-  <div class="card hidden" id="g-docs"><div class="row between"><h2 style="margin:0"><span class="step">4</span>Documents</h2>
+  <div class="card"><h2><span class="step">3</span>Choose Case</h2>${CASE_GROUPS.map(([t, list]) => '<div class="cg-title">' + t + '</div><div class="cases">' + list.map(([k, n, s]) => '<div class="case" data-case="' + k + '"><b>' + n + '</b><span>' + s + '</span></div>').join('') + '</div>').join('')}</div>
+  <div class="card hidden" id="g-form"><h2><span class="step">4</span><span id="g-title"></span></h2><div id="g-fields"></div>${COMMON}<h3>Compliance Timeline</h3><div class="timeline" id="g-timeline"></div></div>
+  <div class="card hidden" id="g-docs"><div class="row between"><h2 style="margin:0"><span class="step">5</span>Documents</h2>
    <div class="row"><button class="ghost sm" id="g-selall">Select / unselect all</button><button id="g-zip">⬇ Generate &amp; Download</button></div></div>
    <p class="hint" style="margin:6px 0 14px">Tick the documents you need and click <b>Generate &amp; Download</b> (one Word file, or a ZIP when several are ticked) — or use <b>Generate Word</b> on a single document.</p><div class="docs" id="g-doclist"></div></div>`;
 
   $('g-ca').innerHTML = '<option value="">— Select CA firm —</option>' + S.cas.map(a => '<option value="' + a.id + '">' + esc(a.firm) + ' (' + esc(a.frn) + ')</option>').join('');
   $('g-ca').onchange = () => { G.caId = $('g-ca').value; queueSave(); paint(); };
+  $('g-fy').value = G.fy;
+  const fyInfo = () => { const z = fys.find(q => q.fy === G.fy) || {}, agmNo = DC.agmNumber(wc, z.end);
+    $('g-fyinfo').innerHTML = z.end ? 'Period: <b>' + H.sd(z.from) + ' to ' + H.sd(z.end) + '</b>' + (z.first ? ' (first financial year, Sec 2(41))' : '') + ' · AGM for this FY: <b>' + (agmNo ? H.ord(agmNo) + ' AGM' : '—') + '</b>, due by <b>' + H.sd(DC.agmDueOf(wc, z.end)) + '</b>' + (wc.incDate ? '' : ' · <span class="req">Add the date of incorporation in the client master for automatic AGM numbers.</span>') : ''; };
+  fyInfo();
+  $('g-fy').onchange = async () => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); await flushSave(); G.fy = $('g-fy').value; lsSet('nscrm.fy.' + wc.id, G.fy); fyInfo(); if (G.kase) { await loadFiling(); if (!$('g-dir')) return; } docKey = ''; paint(); };
   $('g-dir').onchange = e => {
     const i = parseInt(e.target.value, 10); if (isNaN(i)) return;
     G.dirIdx = e.target.checked ? [...G.dirIdx.filter(n => n !== i), i] : G.dirIdx.filter(n => n !== i);
     G.dirIndex = G.dirIdx[0] || 0; docKey = ''; queueSave(); paint();
   };
   $$('.case').forEach(el => el.onclick = async () => {
-    G.kase = el.dataset.case; await loadFiling(); if (!$('g-dir')) return; paint(); $('g-form').scrollIntoView({ behavior: 'smooth' });
+    await flushSave(); G.kase = el.dataset.case;
+    const firstFy = (fys.find(z => z.first) || {}).fy; // incorporation-related cases belong to the first FY
+    if (['first', 'inc20a'].includes(G.kase) && firstFy && G.fy !== firstFy) { G.fy = firstFy; $('g-fy').value = firstFy; fyInfo(); toast('Financial year set to FY ' + firstFy + ' (year of incorporation)'); }
+    await loadFiling(); if (!$('g-dir')) return; paint(); $('g-form').scrollIntoView({ behavior: 'smooth' });
   });
   $('g-form').addEventListener('input', e => { if (e.target.dataset.f) { G.form[e.target.dataset.f] = e.target.value; queueSave(); paintTimeline(); } });
   $('g-form').addEventListener('change', e => { if (e.target.dataset.f) { G.form[e.target.dataset.f] = e.target.value; autoFill(); queueSave(); paint(); } });
@@ -355,15 +390,23 @@ PAGES.generate = async params => {
 };
 const client = () => S.clients.find(c => String(c.id) === String(G.clientId));
 const caFirm = () => S.cas.find(a => String(a.id) === String(G.caId));
-const needsCA = k => ['first', 'agm', 'casual', 'annual', 'dpt3', 'stk2'].includes(k);
-const ctx = () => { const c = client() || {}, ds = G.dirIdx.map(i => (c.directors || [])[i]).filter(Boolean); return { kase: G.kase, c, a: caFirm() || {}, d: ds[0] || {}, ds, f: G.form }; };
+const needsCA = k => ['first', 'agm', 'casual', 'annual', 'dpt3', 'stk2', 'yearly'].includes(k);
+const ctx = () => { const c = client() || {}, ds = G.dirIdx.map(i => (c.directors || [])[i]).filter(Boolean); return { kase: G.kase, c, a: caFirm() || {}, d: ds[0] || {}, ds, f: G.form, fy: G.fy, link: G.link || {} }; };
 
 async function loadFiling() {
   const c = client(); G.form = {};
   if (!c || !G.kase) return;
   let saved = null;
-  try { saved = await api('GET', '/api/filings/' + c.id + '/' + G.kase); } catch (e) { fail(e); }
+  const q = '?fy=' + encodeURIComponent(G.fy || ''), want = G.kase + '|' + G.fy;
+  try { saved = await api('GET', '/api/filings/' + c.id + '/' + G.kase + q); } catch (e) { fail(e); }
   saved = saved || {};
+  // linked records keep the year consistent: last year's AGM / accounts meeting, this year's Board meeting dates
+  G.link = {};
+  try {
+    if (G.kase === 'yearly' || G.kase === 'annual') G.link.prevAnnual = (await api('GET', '/api/filings/' + c.id + '/annual?fy=' + encodeURIComponent(prevFY(G.fy)))) || {};
+    if (G.kase === 'annual') G.link.yearly = (await api('GET', '/api/filings/' + c.id + '/yearly' + q)) || {};
+  } catch (e) { G.link = {}; }
+  if (want !== G.kase + '|' + G.fy) return;
   G.form = Object.assign({}, saved); delete G.form.caId; delete G.form.dirIndex; delete G.form.dirIdx;
   if (saved.caId && S.cas.some(a => a.id === saved.caId)) G.caId = String(saved.caId);
   const nd = (c.directors || []).length;
@@ -376,21 +419,25 @@ async function loadFiling() {
   docKey = '';
 }
 function autoFill() { if (G.kase === 'agm' && G.form.agmDate && !G.form.fyEnd) { G.form.fyEnd = H.fyStart(G.form.agmDate) + '-03-31'; const el = $$('[data-f="fyEnd"]')[0]; if (el) el.value = G.form.fyEnd; } }
+function saveNow() {
+  if (!G.clientId || !G.kase) return Promise.resolve();
+  const body = { form: Object.assign({}, G.form), caId: G.caId, dirIndex: G.dirIndex, dirIdx: G.dirIdx.slice(), fy: G.fy }, url = '/api/filings/' + G.clientId + '/' + G.kase;
+  return api('PUT', url, body).then(() => { if ($('savedNote')) $('savedNote').textContent = '✓ Saved for the team'; }).catch(e => { if ($('savedNote')) $('savedNote').textContent = ''; fail(e); });
+}
 function queueSave() {
   if (!G.clientId || !G.kase) return;
   clearTimeout(saveTimer); if ($('savedNote')) $('savedNote').textContent = 'Saving…';
-  saveTimer = setTimeout(async () => {
-    try { await api('PUT', '/api/filings/' + G.clientId + '/' + G.kase, { form: G.form, caId: G.caId, dirIndex: G.dirIndex, dirIdx: G.dirIdx }); if ($('savedNote')) $('savedNote').textContent = '✓ Saved for the team'; }
-    catch (e) { if ($('savedNote')) $('savedNote').textContent = ''; fail(e); }
-  }, 700);
+  saveTimer = setTimeout(() => { saveTimer = null; saveNow(); }, 700);
 }
+// save any pending change before switching case / financial year
+async function flushSave() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; await saveNow(); } }
 function dirOptions(c, blank) { return (blank ? '<option value="">— Select —</option>' : '') + (c && c.directors || []).map((d, i) => '<option value="' + i + '">' + esc(d.name) + (d.din ? ' (DIN ' + esc(d.din) + ')' : '') + '</option>').join(''); }
 function paint() {
   const c = client();
   $('g-dir').innerHTML = c && c.directors && c.directors.length ? c.directors.map((d, i) => { const pos = G.dirIdx.indexOf(i); return '<label class="dirchip' + (pos >= 0 ? ' on' : '') + '"><input type="checkbox" value="' + i + '"' + (pos >= 0 ? ' checked' : '') + '>' + (pos >= 0 ? '<b class="ord">' + (pos + 1) + '</b>' : '') + esc(d.name) + (d.din ? ' <small>(' + esc(d.din) + ')</small>' : '') + '</label>'; }).join('') : '<span class="hint">— no directors in client master —</span>';
   $('g-ca').value = G.caId || '';
   $('g-cawrap').classList.toggle('hidden', !!G.kase && !needsCA(G.kase));
-  $('g-calabel').innerHTML = (G.kase === 'annual' || G.kase === 'dpt3' ? 'Statutory Auditor (CA Firm)' : G.kase === 'stk2' ? 'CA Firm (certifies statement of accounts)' : 'Auditor being appointed (CA Firm)') + ' <span class="req">*</span>';
+  $('g-calabel').innerHTML = (G.kase === 'annual' || G.kase === 'dpt3' || G.kase === 'yearly' ? 'Statutory Auditor (CA Firm)' : G.kase === 'stk2' ? 'CA Firm (certifies statement of accounts)' : 'Auditor being appointed (CA Firm)') + ' <span class="req">*</span>';
   if (!S.clients.length) $('g-info').innerHTML = 'No clients yet — <a href="#/clients">add a client</a> first.';
   else if (!S.cas.length && needsCA(G.kase)) $('g-info').innerHTML = 'No CA firm yet — <a href="#/cas">add a CA firm</a> first.';
   else $('g-info').textContent = c ? (c.type === 'llp' ? 'LLPIN: ' : 'CIN: ') + (c.cin || '—') + ' · Regd. Office: ' + H.oneLine(c.addr) + (c.incDate ? ' · Incorporated: ' + H.sd(c.incDate) : '') : '';
@@ -399,7 +446,10 @@ function paint() {
   $('g-form').classList.toggle('hidden', !show); $('g-docs').classList.toggle('hidden', !show);
   if (!show) return;
   $('g-title').textContent = DC.CASE_TITLE[G.kase];
-  if ($('g-fields').dataset.kase !== G.kase) { $('g-fields').innerHTML = FIELDS[G.kase]; $('g-fields').dataset.kase = G.kase; bindAppSign(); }
+  if ($('g-fields').dataset.kase !== G.kase) {
+    $('g-fields').innerHTML = FIELDS[G.kase]; $('g-fields').dataset.kase = G.kase; bindAppSign();
+    $$('#g-fields [data-f="fyEnd"], #g-fields [data-f="msmeYear"]').forEach(el => { el.readOnly = true; el.classList.add('locked'); el.title = 'Set by the financial year chosen at the top'; const h = el.parentElement.querySelector('.hint'); if (h) h.textContent = 'From the financial year chosen at the top'; else el.insertAdjacentHTML('afterend', '<div class="hint">From the financial year chosen at the top</div>'); });
+  }
   $$('#g-form [' + DIRSEL + ']').forEach(sel => { const cur = G.form[sel.dataset.f]; sel.innerHTML = dirOptions(c, true); if (cur !== undefined) sel.value = cur; });
   $$('#g-form [data-holders]').forEach(sel => { const cur = G.form[sel.dataset.f]; sel.innerHTML = '<option value="">— Select —</option>' + (c.shareholders || []).map((h, i) => '<option value="' + i + '">' + esc(h.name) + ' (' + esc(h.shares || 0) + ' shares)</option>').join(''); if (cur !== undefined) sel.value = cur; });
   // smart defaults: fill empty / still-auto fields (dates, AGM number) — the user can always change them
@@ -418,6 +468,7 @@ function paint() {
   vis('reason-other', f.reason === 'other'); vis('reason-resign', f.reason !== 'other'); vis('prev-agm', f.apptType !== 're');
   vis('regularise', f.apptMode !== 'egm'); vis('egm', f.apptMode === 'egm' || f.regularise === 'yes');
   vis('rpt', f.rpt === 'yes'); vis('full', f.coSize === 'other'); vis('roc', f.scope === 'roc');
+  vis('notfirst', !DC.isFirstFY(c, DC.fyEndOf(G.fy)));
   paintTimeline(); paintDocs();
 }
 function bindAppSign() {
@@ -452,7 +503,7 @@ async function download(ids, zip) {
   try {
     clearTimeout(saveTimer);
     const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
-      body: JSON.stringify({ clientId: G.clientId, caId: G.caId, dirIndex: G.dirIndex, dirIdx: G.dirIdx, kase: G.kase, form: G.form, docIds: ids, zip }) });
+      body: JSON.stringify({ clientId: G.clientId, caId: G.caId, dirIndex: G.dirIndex, dirIdx: G.dirIdx, kase: G.kase, form: G.form, docIds: ids, zip, fy: G.fy }) });
     if (r.status === 401) { showAuth(); throw new Error('Please log in again.'); }
     if (!r.ok) { let msg = 'Could not create the documents.'; try { msg = (await r.json()).error || msg; } catch (e) {} throw new Error(msg); }
     const blob = await r.blob(), cd = r.headers.get('content-disposition') || '', name = (/filename="([^"]+)"/.exec(cd) || [])[1] || 'documents';
@@ -652,6 +703,7 @@ PAGES.cas = () => {
    <div><label>Designation</label><select data-a="desig"><option>Partner</option><option>Proprietor</option><option>Designated Partner</option></select></div>
    <div class="span3"><label>Office Address <span class="req">*</span></label><textarea data-a="addr"></textarea></div>
    <div><label>Email</label><input type="email" data-a="email"></div><div><label>Phone</label><input data-a="phone"></div>${logoField('a-logo')}
+   <div><label>Signature of signing partner (image)</label><div class="sigbox"><input type="file" accept="image/png,image/jpeg" id="a-sign-file"><img id="a-sign-prev" class="sig-prev hidden" alt=""><button type="button" class="danger sm hidden" id="a-sign-del">Remove</button></div><div class="hint">Printed above the partner's name on consent letters, certificates and the auditor's acceptance</div></div>
    ${lhField('a-lh', 'CA firm letterhead')}</div>
    <div class="row" style="margin-top:18px"><button id="a-save">Save CA Firm</button><button class="ghost" id="a-cancel">Cancel</button></div></div>
   <div class="card"><div id="a-list"></div></div>`;
@@ -661,16 +713,17 @@ PAGES.cas = () => {
   listCAs();
 };
 function openCA(a) {
-  editCA = a ? Object.assign({}, a) : { logo: null };
+  editCA = a ? Object.assign({}, a) : { logo: null, sign: null };
   caLH = { current: a ? a.lhName : null, pending: null, remove: false };
   $('a-title').textContent = a ? 'Edit CA Firm' : 'Add CA Firm';
   $$('[data-a]').forEach(el => { el.value = a ? (a[el.dataset.a] ?? '') : (el.tagName === 'SELECT' ? el.options[0].value : ''); });
   bindLogo('a-logo', () => editCA.logo, l => { editCA.logo = l; });
+  bindLogo('a-sign', () => editCA.sign, l => { editCA.sign = l; });
   bindLH('a-lh', caLH, a ? '/api/cas/' + a.id + '/letterhead' : null);
   $('a-editor').classList.remove('hidden'); $('a-editor').scrollIntoView({ behavior: 'smooth' });
 }
 async function saveCA() {
-  const a = { logo: editCA.logo };
+  const a = { logo: editCA.logo, sign: editCA.sign || null };
   $$('[data-a]').forEach(el => { a[el.dataset.a] = el.value.trim(); });
   const miss = []; if (!a.firm) miss.push('Firm Name'); if (!a.frn) miss.push('FRN'); if (!a.partner) miss.push('Signing Partner'); if (!a.mno) miss.push('Membership No.'); if (!a.addr) miss.push('Office Address');
   if (miss.length) return toast('Please fill: ' + miss.join(', '), true);
@@ -684,7 +737,7 @@ async function saveCA() {
 }
 function listCAs() {
   $('a-list').innerHTML = S.cas.length ? '<table class="tbl"><tr><th>Firm</th><th>FRN</th><th class="hide-m">Signing Partner</th><th></th></tr>' + S.cas.map(a =>
-    '<tr><td><b>' + esc(a.firm) + '</b>' + (a.lhName ? ' <span class="pill green">Word letterhead</span>' : '') + '<br><small class="hint">' + esc(H.oneLine(a.addr)) + '</small></td><td>' + esc(a.frn) + '</td><td class="hide-m">' + esc(a.partner) + '<br><small class="hint">' + esc(a.desig) + ' · M.No. ' + esc(a.mno) + '</small></td><td class="actions"><button class="ghost sm" data-edit="' + a.id + '">Edit</button>' + (isAdmin() ? ' <button class="danger sm" data-del="' + a.id + '">Delete</button>' : '') + '</td></tr>').join('') + '</table>'
+    '<tr><td><b>' + esc(a.firm) + '</b>' + (a.lhName ? ' <span class="pill green">Word letterhead</span>' : '') + (a.sign ? ' <span class="pill gold">Signature</span>' : '') + '<br><small class="hint">' + esc(H.oneLine(a.addr)) + '</small></td><td>' + esc(a.frn) + '</td><td class="hide-m">' + esc(a.partner) + '<br><small class="hint">' + esc(a.desig) + ' · M.No. ' + esc(a.mno) + '</small></td><td class="actions"><button class="ghost sm" data-edit="' + a.id + '">Edit</button>' + (isAdmin() ? ' <button class="danger sm" data-del="' + a.id + '">Delete</button>' : '') + '</td></tr>').join('') + '</table>'
     : '<div class="empty">No CA firms yet. Click “+ Add CA Firm”.</div>';
   $$('#a-list [data-edit]').forEach(b => b.onclick = () => openCA(S.cas.find(a => String(a.id) === b.dataset.edit)));
   $$('#a-list [data-del]').forEach(b => b.onclick = async () => {

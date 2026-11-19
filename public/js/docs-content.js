@@ -42,6 +42,15 @@
   const firstFYEnd = (inc, llp) => { const y = yr(inc); if (!y) return ''; const m = pd(inc).getUTCMonth() + 1; return (llp && m >= 10 ? y + 2 : y + 1) + '-03-31'; };
   // LLP Act Sec 2(1)(l): an LLP incorporated after 30th September may close its first FY on 31st March of the following year
   const firstEnd = c => c && c.incDate ? firstFYEnd(c.incDate, c.type === 'llp') : '';
+  /* ---------- changes in law that depend on the date ---------- */
+  // DIR-3 KYC: Rule 12A substituted by G.S.R. 943(E) dated 31.12.2025, w.e.f. 31.03.2026 — once in every three financial years, by 30 June
+  const KYC_NEW_FROM = '2026-03-31';
+  const kycText = d => (d && d >= KYC_NEW_FROM)
+    ? '. The Board also noted that, under Rule 12A of the Companies (Appointment and Qualification of Directors) Rules, 2014 as substituted w.e.f. 31.03.2026, e-Form DIR-3 KYC Web of each Director is required once in every three financial years, by 30th June following the third financial year, and within 30 days of any change in the registered mobile number, e-mail address or residential address.'
+    : ' and the DIR-3 KYC of all the Directors (due by 30th September).';
+  // filing relaxations for annual returns / financial statements (no additional fee up to these dates; AGM due date is not extended)
+  const FILING_RELAX = { '2025-26': { aoc4: '2026-12-31', mgt7: '2027-01-31', ref: 'MCA General Circular 05/2026 dated 24.10.2026' } };
+  const relaxOf = fyEnd => FILING_RELAX[fyOf(fyEnd)] || null;
   /* ---------- entity type: private / public / OPC / Section 8 / LLP ---------- */
   function entity(c) {
     c = c || {};
@@ -779,8 +788,10 @@
         head('D. Turnover & net worth'), { tbl: [['Turnover (Rs.)', v(f.turnover)], ['Net worth (Rs.)', v(f.netWorth)], ['Total revenue / Profit after tax (Rs.)', amt(f.revCur) + ' / ' + amt(f.patCur)]] },
         head('E. Directors'), { tbl: [['Name', 'DIN', 'Designation'], ...(c.directors || []).map(d => [d.name, d.din || '—', d.desig || 'Director'])], cols: [50, 20, 30], head: true },
         head('F. Statutory auditor'), { tbl: [['Firm / FRN', v(a.firm) + ' / ' + v(a.frn)], ['Signing partner / M. No.', v(a.partner) + ' / ' + v(a.mno)]] },
-        head('G. Due dates'), { tbl: x.E.opc ? [['AGM', 'Not required (Sec 96(1))'], ['e-Form AOC-4 due by', '**' + sd(addDays(x.fyEnd, 180)) + '** (180 days from the end of the FY — proviso to Sec 137(1))'], ['e-Form MGT-7A due by', '**' + sd(addDays(agmDue, 60)) + '** (60 days from the date by which the AGM would have been held — Sec 92(4))']]
-          : [['AGM due by', sd(agmDue) + ' (' + (x.firstFY ? '9 months from end of first FY' : '6 months from end of FY') + ', Sec 96)'], ['e-Form AOC-4 due by', '**' + sd(addDays(f.agmDate, 30)) + '** (30 days from AGM — Sec 137)'], ['e-Form ' + x.retForm + ' due by', '**' + sd(addDays(f.agmDate, 60)) + '** (60 days from AGM — Sec 92(4))']] },
+        head('G. Due dates'), { tbl: x.E.opc ? [['AGM', 'Not required (Sec 96(1))'], ['e-Form AOC-4 due by', '**' + sd(addDays(x.fyEnd, 180)) + '** (180 days from the end of the FY — proviso to Sec 137(1))'], ['e-Form MGT-7A due by', '**' + sd(addDays(agmDue, 60)) + '** (60 days from the date by which the AGM would have been held — Sec 92(4))'],
+            ...(relaxOf(x.fyEnd) ? [['Relaxation', 'No additional fee for AOC-4 up to ' + sd(relaxOf(x.fyEnd).aoc4) + ' and MGT-7A up to ' + sd(relaxOf(x.fyEnd).mgt7) + ' — ' + relaxOf(x.fyEnd).ref + '.']] : [])]
+          : [['AGM due by', sd(agmDue) + ' (' + (x.firstFY ? '9 months from end of first FY' : '6 months from end of FY') + ', Sec 96)'], ['e-Form AOC-4 due by', '**' + sd(addDays(f.agmDate, 30)) + '** (30 days from AGM — Sec 137)'], ['e-Form ' + x.retForm + ' due by', '**' + sd(addDays(f.agmDate, 60)) + '** (60 days from AGM — Sec 92(4))'],
+            ...(relaxOf(x.fyEnd) ? [['Relaxation', 'No additional fee for AOC-4 up to ' + sd(relaxOf(x.fyEnd).aoc4) + ' and ' + x.retForm + ' up to ' + sd(relaxOf(x.fyEnd).mgt7) + ' — ' + relaxOf(x.fyEnd).ref + '. The AGM due date is not extended.']] : [])] },
         head('H. Attachments to AOC-4'), ...numbered(['Financial statements — ' + fsWords(x) + ' (prepared and signed separately)', 'Auditors’ Report (with UDIN)', 'Board’s Report' + (f.rpt === 'yes' ? ', with Form AOC-2 (Annexure-I)' : ''), 'Statement of subsidiaries in Form AOC-1 and CSR annexure — only if applicable']),
         head('I. Attachments to ' + x.retForm), ...numbered([shareholders.length ? 'List of shareholders as on ' + sd(x.fyEnd) : 'List of shareholders (add shareholders in the client master to generate it)', 'Approval letter for extension of AGM — only if an extension was granted', ...(!x.small ? ['Form MGT-8 (certificate by a Company Secretary in practice) — required if paid-up capital ≥ Rs. 10 crore or turnover ≥ Rs. 50 crore'] : [])]),
         head('J. Before filing'), ...numbered(['Financial statements signed as per Sec 134(1) and the Board’s Report as per Sec 134(6) before the AGM notice is issued.', 'The auditor’s UDIN is generated and quoted on the Auditors’ Report.', 'Directors’ DIN KYC (DIR-3 KYC) is active; the signing director’s DSC is registered on MCA.', 'File AOC-4 XBRL instead of AOC-4 if the company is covered by the XBRL rules (listed, paid-up ≥ Rs. 5 crore or turnover ≥ Rs. 100 crore).', 'File AOC-4 first and MGT-7/7A after it; keep the SRNs and challans in the client file.']),
@@ -1286,7 +1297,7 @@
       }
       if (m.kind === 'q1') {
         L.push({ t: 'Review of business', ag: 'To review the business performance of the Company.', min: 'The Board reviewed the business operations and the financial performance of the Company for the period from 1st April' + (yr(m.date) ? ', ' + yr(m.date) : '') + ' up to the date of the meeting, and discussed the plans for the year.' });
-        if (!first) L.push({ t: 'Statutory compliances', ag: 'To take note of the statutory compliances for the year.', min: 'The Board took note of the filing of e-Form DPT-3 for the financial year ' + fyLabel(prevEnd) + ' (due by 30th June), e-Form MSME-1 for October–March (due by 30th April, if applicable) and the DIR-3 KYC of all the Directors (due by 30th September).' });
+        if (!first) L.push({ t: 'Statutory compliances', ag: 'To take note of the statutory compliances for the year.', min: 'The Board took note of the filing of e-Form DPT-3 for the financial year ' + fyLabel(prevEnd) + ' (due by 30th June)' + (m.date >= KYC_NEW_FROM ? ' and' : ',') + ' e-Form MSME-1 for October–March (due by 30th April, if applicable)' + kycText(m.date) });
       }
       if (m.kind === 'h1') {
         L.push({ t: 'Review of half-yearly performance', ag: 'To review the performance of the Company for the half-year ended 30th September.', min: 'The Board reviewed the financial performance of the Company for the half-year ended 30th September' + (yr(m.date) ? ', ' + yr(m.date) : '') + ' and expressed satisfaction with the progress made.' });
@@ -1656,16 +1667,18 @@
       const agmDue = x.fyEnd ? addMonths(x.fyEnd, x.firstFY ? 9 : 6) : '';
       row('Notice of Board meeting (accounts)', addDays(f.bmDate, -7), f.bmNotice, 'Notice', 'at least 7 days, Sec 173(3)');
       row('Sole member adopts accounts (no AGM for an OPC)', agmDue, f.agmDate, 'Resolution', 'Sec 96(1) & 122(3)');
-      row('File e-Form AOC-4', addDays(x.fyEnd, 180), f.aoc4Date, 'Filed', 'within 180 days of FY end, proviso to Sec 137(1)', 'aoc4');
-      row('File e-Form MGT-7A', addDays(agmDue, 60), f.mgt7Date, 'Filed', 'within 60 days of the date the AGM would have been held, Sec 92(4)', 'mgt7');
+      const rx = relaxOf(x.fyEnd);
+      row('File e-Form AOC-4', addDays(x.fyEnd, 180), f.aoc4Date, 'Filed', 'within 180 days of FY end, proviso to Sec 137(1)' + (rx ? ' — no additional fee up to ' + sd(rx.aoc4) + ' (' + rx.ref + ')' : ''), 'aoc4');
+      row('File e-Form MGT-7A', addDays(agmDue, 60), f.mgt7Date, 'Filed', 'within 60 days of the date the AGM would have been held, Sec 92(4)' + (rx ? ' — no additional fee up to ' + sd(rx.mgt7) + ' (' + rx.ref + ')' : ''), 'mgt7');
     } else if (K === 'annual') {
       const agmDue = x.fyEnd ? addMonths(x.fyEnd, x.firstFY ? 9 : 6) : '', nd = x.E.noticeDays;
       row('Hold ' + ord(f.agmNo) + ' AGM', agmDue, f.agmDate, 'AGM', (x.firstFY ? 'within 9 months of first FY end' : 'within 6 months of FY end') + ', Sec 96', 'agm');
       row('Notice of Board meeting (accounts)', addDays(f.bmDate, -7), f.bmNotice, 'Notice', 'at least 7 days, Sec 173(3)');
       if (f.shortNotice !== 'yes') row('Dispatch AGM notice (' + nd + ' clear days)', addDays(f.agmDate, -(nd + 1)), f.agmNotice, 'Notice', x.E.sec8 ? 'Sec 101 — 14 days for a Section 8 company' : 'Sec 101');
       row('Board meeting approving accounts — before AGM notice', f.agmNotice || addDays(f.agmDate, -(nd + 1)), f.bmDate, 'Meeting', 'Sec 134(1)');
-      row('File e-Form AOC-4', addDays(f.agmDate, 30), f.aoc4Date, 'Filed', 'within 30 days of AGM, Sec 137', 'aoc4');
-      row('File e-Form ' + x.retForm, addDays(f.agmDate, 60), f.mgt7Date, 'Filed', 'within 60 days of AGM, Sec 92(4)', 'mgt7');
+      const rx = relaxOf(x.fyEnd);
+      row('File e-Form AOC-4', addDays(f.agmDate, 30), f.aoc4Date, 'Filed', 'within 30 days of AGM, Sec 137' + (rx ? ' — no additional fee up to ' + sd(rx.aoc4) + ' (' + rx.ref + ')' : ''), 'aoc4');
+      row('File e-Form ' + x.retForm, addDays(f.agmDate, 60), f.mgt7Date, 'Filed', 'within 60 days of AGM, Sec 92(4)' + (rx ? ' — no additional fee up to ' + sd(rx.mgt7) + ' (' + rx.ref + ')' : ''), 'mgt7');
     } else if (K === 'allot') {
       row('Notice of Board meeting (offer)', addDays(f.bmDate, -7), f.bmNotice, 'Notice', 'Sec 173(3)');
       row('Rights offer open for at least 15 days', addDays(f.offerDate, 15), f.lastDate, 'Closes', 'Sec 62(1)(a)(i) — shorter only with 90% consent');
@@ -1701,7 +1714,8 @@
       });
       if (!first && x.fyEnd) row('AGM for FY ' + fyLabel(prevEnd), agmDueOf(c, prevEnd), f.agmDate, 'AGM', 'Sec 96', 'agm');
       if (yr(from)) {
-        row('DIR-3 KYC of all Directors', yr(from) + '-09-30', '', '', 'every year by 30 September');
+        if (yr(from) + '-09-30' < KYC_NEW_FROM) row('DIR-3 KYC of all Directors', yr(from) + '-09-30', '', '', 'every year by 30 September (rule up to 30.03.2026)');
+        else row('DIR-3 KYC Web — once in 3 FYs', '', '', '', 'by 30 June after every third FY, and within 30 days of a change in mobile / e-mail / address — Rule 12A w.e.f. 31.03.2026');
         if (!first) row('DPT-3 for FY ' + fyLabel(prevEnd), yr(from) + '-06-30', '', '', 'Rule 16 / 16A');
       }
     } else if (K === 'llp') {
@@ -1894,6 +1908,6 @@
 
   return { CASES, CASE_TITLE, CASE_SHORT, LH_CO, LH_CA, LH_NONE, LH_PLAIN, BL, docDefs, missing, timeline, warnings, fileName, defaults, agmNumber,
     VARIANTS, variantKey, templateText, templateDocs, placeholders, isFixed,
-    FY_CASES, fyList, fyEndOf, fyOf, fyMeetings, isFirstFY, agmDueOf, entity, casesFor,
+    FILING_RELAX, KYC_NEW_FROM, FY_CASES, fyList, fyEndOf, fyOf, fyMeetings, isFirstFY, agmDueOf, entity, casesFor,
     helpers: { ld, sd, tm, ord, addDays, addMonths, oneLine, fyStart, firstFYEnd, pd, parseDMY } };
 });

@@ -598,7 +598,7 @@ PAGES.clients = params => {
    <div><label>CIN <span class="req">*</span></label><input data-c="cin" maxlength="21" style="text-transform:uppercase"></div>
    <div><label>Date of Incorporation</label><input type="date" data-c="incDate"></div>
    <div><label>Company Type</label><select data-c="type"><option value="private">Private Limited</option><option value="public">Public Limited (unlisted)</option><option value="opc">One Person Company</option><option value="llp">LLP (Limited Liability Partnership)</option></select></div>
-   <div><label>Small company?</label><select data-c="size"><option value="small">Yes — small company / OPC</option><option value="other">No</option></select><div class="hint">Paid-up ≤ Rs. 4 crore and turnover ≤ Rs. 40 crore — verify current limits</div></div>
+   <div><label>Small company?</label><select data-c="size"><option value="small">Yes — small company / OPC</option><option value="other">No</option></select><div class="hint">Private company with paid-up capital ≤ Rs. 10 crore and turnover ≤ Rs. 100 crore (limits w.e.f. 01.12.2025). Not for public or Section 8 companies.</div></div>
    <div><label>PAN</label><input data-c="pan" maxlength="10" style="text-transform:uppercase"></div>
    <div><label>Last AGM number</label><input type="number" min="1" data-c="lastAgmNo" placeholder="For AGM numbering"></div><div><label>Last AGM date</label><input type="date" data-c="lastAgmDate"></div>
    <div><label>Last Balance Sheet filed with ROC (date)</label><input type="date" data-c="lastBsDate"><div class="hint">“Date of Balance Sheet” on MCA — the next FY to file follows it</div></div>

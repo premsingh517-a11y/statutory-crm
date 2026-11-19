@@ -681,6 +681,89 @@
     return out;
   }
 
+  /* =====================================================================
+     INDEPENDENT AUDITOR'S REPORT (SA 700 / Sec 143) — on the CA's Word letterhead if uploaded, otherwise plain
+     ===================================================================== */
+  const mdy = s => { if (isTok(s)) return s; const d = pd(s); return d ? MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear() : BL; };
+  function auditReportDoc(x) {
+    const { c, a, f } = x, E = x.E, NAME = String(c.name || '').toUpperCase(), cf = !x.small; // cash flow not required for OPC / small company (Sec 2(40))
+    const asAt = T(x, 'fyEndAsAt', mdy(x.fyEnd)), period = T(x, 'periodWordAR', x.firstFY ? 'period' : 'year');
+    const fsParts = T(x, 'fsComponents', 'the Balance Sheet as at ' + asAt + ', ' + x.PL + (cf ? ' and the Cash Flow Statement' : '') + ' for the ' + period + ' then ended');
+    const fsShort = T(x, 'fsShortList', 'The Balance Sheet, ' + x.PL.replace(/^the /, 'the ') + (cf ? ' and the Cash Flow Statement' : ''));
+    const resWord = f.audResult === 'profit' ? (E.sec8 ? 'surplus' : 'profit') : f.audResult === 'loss' ? (E.sec8 ? 'deficit' : 'loss') : (E.sec8 ? 'surplus / (deficit)' : 'profit / (loss)');
+    const result = T(x, 'opinionResult', 'its ' + resWord + (cf ? ' and its cash flows' : ''));
+    const qual = f.audOpinion === 'qualified';
+    const caro = f.caro || (E.sec8 || E.opc || x.small ? 'na' : 'annex');
+    const caroPara = T(x, 'caroPara', caro === 'annex'
+      ? 'As required by the Companies (Auditor’s Report) Order, 2020 (“the Order”), issued by the Central Government in terms of sub-section (11) of Section 143 of the Act, we give in the “Annexure A” a statement on the matters specified in paragraphs 3 and 4 of the Order, to the extent applicable.'
+      : 'In our opinion, the Companies (Auditor’s Report) Order, 2020 (“the Order”), issued by the Central Government in terms of sub-section (11) of Section 143 of the Act, is not applicable to the Company, being ' + (caro === 'pvt'
+        ? 'a private limited company which is not a subsidiary or holding company of a public company, whose paid-up capital and reserves and surplus do not exceed rupees one crore, whose total borrowings from any bank or financial institution do not exceed rupees one crore at any point of time during the financial year, and whose total revenue does not exceed rupees ten crore during the financial year (paragraph 1(2)(v) of the Order)'
+        : E.sec8 ? 'a company licensed to operate under Section 8 of the Act' : E.opc ? 'a One Person Company' : 'a small company as defined under Section 2(85) of the Act') + '; accordingly, no reporting under the said Order is made.');
+    const ifc = f.ifc || (E.pub ? 'annex' : 'exempt');
+    const ifcPara = T(x, 'ifcPara', ifc === 'annex'
+      ? 'With respect to the adequacy of the internal financial controls with reference to financial statements of the Company and the operating effectiveness of such controls, refer to our separate Report in “Annexure B”;'
+      : 'Reporting on the adequacy of the internal financial controls with reference to financial statements of the Company and the operating effectiveness of such controls under Section 143(3)(i) of the Act is not applicable to the Company in terms of the exemption granted by Notification No. G.S.R. 583(E) dated June 13, 2017' + (E.opc ? ', the Company being a One Person Company' : x.small ? ', the Company being a small company' : ', the Company being a private company with turnover less than rupees fifty crore and aggregate borrowings less than rupees twenty-five crore') + ';');
+    const remunPara = T(x, 'remunPara', E.pub
+      ? (f.mgrRemun === 'paid' ? 'in our opinion and to the best of our information and according to the explanations given to us, the remuneration paid by the Company to its directors during the year is in accordance with the provisions of Section 197 of the Act;' : 'in our opinion and according to the information and explanations given to us, the Company has not paid any remuneration to its directors during the year; accordingly, the provisions of Section 197 of the Act are not applicable;')
+      : 'in our opinion and according to the information and explanations given to us, the provisions of Section 197 of the Act are not applicable to the Company, being a private company;');
+    const divPara = T(x, 'dividendPara', E.sec8 ? 'The Company, being a company licensed under Section 8 of the Act, is prohibited from paying dividend and has not declared or paid any dividend during the year;'
+      : f.divPaid === 'yes' ? 'The dividend declared or paid by the Company during the year is in compliance with Section 123 of the Act;' : 'The Company has not declared or paid any dividend during the year;');
+    const trailPara = T(x, 'auditTrailPara', f.audTrail === 'no'
+      ? 'Based on our examination, the Company has used accounting software for maintaining its books of account which does not have a feature of recording audit trail (edit log) facility; accordingly, we are unable to comment on the operation of the audit trail feature and its preservation as per the statutory requirements for record retention.'
+      : 'Based on our examination, which included test checks, the Company has used accounting software for maintaining its books of account which has a feature of recording audit trail (edit log) facility and the same has operated throughout the year for all relevant transactions recorded in the software. Further, during the course of our audit we did not come across any instance of the audit trail feature being tampered with, and the audit trail has been preserved by the Company as per the statutory requirements for record retention.');
+    const P = t => ({ p: t, al: 'j' }), H = t => ({ p: t, b: true, keep: true }), B = t => ({ p: '•\t' + t, al: 'j', hang: true }), L = (k, t, ind) => ({ p: k + '\t' + t, al: 'j', hang: true, ind: ind || 0 });
+    const opinionHead = T(x, 'opinionHeading', qual ? 'Qualified Opinion' : 'Opinion');
+    const opinionLead = T(x, 'opinionLead', qual ? 'In our opinion and to the best of our information and according to the explanations given to us, except for the effects of the matter described in the Basis for Qualified Opinion section of our report, the aforesaid' : 'In our opinion and to the best of our information and according to the explanations given to us, the aforesaid');
+    const basisHead = T(x, 'basisHeading', qual ? 'Basis for Qualified Opinion' : 'Basis for Opinion');
+    const basisPara = T(x, 'basisMatter', qual ? (f.audBasis || BL) : '');
+    return {
+      id: 'auditreport', title: 'Independent Auditor’s Report' + (qual ? ' (Qualified)' : ''), sub: 'SA 700 & Sec 143 — on the CA’s Word letterhead if uploaded, otherwise without letterhead',
+      lh: LH_CA, lhPlain: true, build: () => [
+        { p: 'INDEPENDENT AUDITOR’S REPORT', b: true, al: 'c' },
+        { p: 'To the Members of', after: 0 }, { p: NAME, b: true },
+        H('Report on the Audit of the Standalone Financial Statements'),
+        H(opinionHead),
+        P('We have audited the accompanying standalone financial statements of ' + NAME + ' (“the Company”), which comprise ' + fsParts + ', and notes to the financial statements, including a summary of significant accounting policies and other explanatory information (hereinafter referred to as “the standalone financial statements”).'),
+        P(opinionLead + ' standalone financial statements give the information required by the Companies Act, 2013 (“the Act”) in the manner so required and give a true and fair view in conformity with the Accounting Standards prescribed under Section 133 of the Act and other accounting principles generally accepted in India, of the state of affairs of the Company as at ' + asAt + ', and ' + result + ' for the ' + period + ' ended on that date.'),
+        H(basisHead),
+        ...(qual || x.T ? [P(basisPara)] : []),
+        P('We conducted our audit in accordance with the Standards on Auditing (SAs) specified under Section 143(10) of the Act. Our responsibilities under those Standards are further described in the Auditor’s Responsibilities for the Audit of the Standalone Financial Statements section of our report.'),
+        P('We are independent of the Company in accordance with the Code of Ethics issued by the Institute of Chartered Accountants of India (ICAI) together with the ethical requirements that are relevant to our audit of the financial statements under the provisions of the Act and the Rules made thereunder, and we have fulfilled our other ethical responsibilities in accordance with these requirements and the ICAI’s Code of Ethics.'),
+        P('We believe that the audit evidence we have obtained is sufficient and appropriate to provide a basis for our ' + T(x, 'opinionWord', qual ? 'qualified opinion' : 'opinion') + '.'),
+        H('Responsibilities of Management and Those Charged with Governance for the Standalone Financial Statements'),
+        P('The Company’s Board of Directors is responsible for the matters stated in Section 134(5) of the Act with respect to the preparation of these standalone financial statements that give a true and fair view of the financial position, financial performance' + (cf ? ' and cash flows' : '') + ' of the Company in accordance with the accounting principles generally accepted in India, including the Accounting Standards specified under Section 133 of the Act, read with relevant rules issued thereunder. This responsibility also includes maintenance of adequate accounting records in accordance with the provisions of the Act for safeguarding the assets of the Company and for preventing and detecting frauds and other irregularities; selection and application of appropriate accounting policies; making judgments and estimates that are reasonable and prudent; and the design, implementation and maintenance of adequate internal financial controls that were operating effectively for ensuring the accuracy and completeness of the accounting records, relevant to the preparation and presentation of the standalone financial statements that give a true and fair view and are free from material misstatement, whether due to fraud or error.'),
+        P('In preparing the standalone financial statements, management is responsible for assessing the Company’s ability to continue as a going concern, disclosing, as applicable, matters related to going concern and using the going concern basis of accounting unless management either intends to liquidate the Company or to cease operations, or has no realistic alternative but to do so. The Board of Directors is also responsible for overseeing the Company’s financial reporting process.'),
+        H('Auditor’s Responsibilities for the Audit of the Standalone Financial Statements'),
+        P('Our objectives are to obtain reasonable assurance about whether the standalone financial statements as a whole are free from material misstatement, whether due to fraud or error, and to issue an auditor’s report that includes our opinion. Reasonable assurance is a high level of assurance, but is not a guarantee that an audit conducted in accordance with SAs will always detect a material misstatement when it exists. Misstatements can arise from fraud or error and are considered material if, individually or in the aggregate, they could reasonably be expected to influence the economic decisions of users taken on the basis of these standalone financial statements.'),
+        P('As part of an audit in accordance with SAs, we exercise professional judgment and maintain professional scepticism throughout the audit. We also:'),
+        B('Identify and assess the risks of material misstatement of the standalone financial statements, whether due to fraud or error, design and perform audit procedures responsive to those risks, and obtain audit evidence that is sufficient and appropriate to provide a basis for our opinion.'),
+        B('Obtain an understanding of internal control relevant to the audit in order to design audit procedures that are appropriate in the circumstances.'),
+        B('Evaluate the appropriateness of accounting policies used and the reasonableness of accounting estimates and related disclosures made by management.'),
+        B('Conclude on the appropriateness of management’s use of the going concern basis of accounting and, based on the audit evidence obtained, whether a material uncertainty exists related to events or conditions that may cast significant doubt on the Company’s ability to continue as a going concern.'),
+        B('Evaluate the overall presentation, structure and content of the standalone financial statements, including the disclosures, and whether the standalone financial statements represent the underlying transactions and events in a manner that achieves fair presentation.'),
+        P('We communicate with those charged with governance regarding, among other matters, the planned scope and timing of the audit and significant audit findings, including any significant deficiencies in internal control that we identify during our audit. We also provide those charged with governance with a statement that we have complied with relevant ethical requirements regarding independence.'),
+        H('Report on Other Legal and Regulatory Requirements'),
+        L('1.', caroPara),
+        L('2.', 'As required by Section 143(3) of the Act, we report that:'),
+        L('(a)', 'We have sought and obtained all the information and explanations which to the best of our knowledge and belief were necessary for the purposes of our audit;', 567),
+        L('(b)', 'In our opinion, proper books of account as required by law have been kept by the Company so far as it appears from our examination of those books;', 567),
+        L('(c)', fsShort + ' dealt with by this Report are in agreement with the books of account;', 567),
+        L('(d)', 'In our opinion, the aforesaid standalone financial statements comply with the Accounting Standards specified under Section 133 of the Act, read with Rule 7 of the Companies (Accounts) Rules, 2014;', 567),
+        L('(e)', 'On the basis of the written representations received from the directors as on ' + asAt + ', taken on record by the Board of Directors, none of the directors is disqualified as on ' + asAt + ' from being appointed as a director in terms of Section 164(2) of the Act;', 567),
+        L('(f)', ifcPara, 567),
+        L('(g)', 'With respect to the other matters to be included in the Auditor’s Report in accordance with the requirements of Section 197(16) of the Act, ' + remunPara + ' and', 567),
+        L('(h)', 'With respect to the other matters to be included in the Auditor’s Report in accordance with Rule 11 of the Companies (Audit and Auditors) Rules, 2014, as amended, in our opinion and to the best of our information and according to the explanations given to us:', 567),
+        L('(i)', 'The Company has disclosed the impact of pending litigations, if any, on its financial position in its standalone financial statements;', 1134),
+        L('(ii)', 'The Company has made provision, as required under the applicable law or accounting standards, for material foreseeable losses, if any, on long-term contracts including derivative contracts;', 1134),
+        L('(iii)', 'There has been no delay in transferring amounts, if any, required to be transferred to the Investor Education and Protection Fund by the Company;', 1134),
+        L('(iv)', '(a) The Management has represented to us that, to the best of its knowledge and belief, no funds have been advanced or loaned or invested (either from borrowed funds or share premium or any other sources or kind of funds) by the Company to or in any other person(s) or entity(ies), including foreign entities (“Intermediaries”), with the understanding, whether recorded in writing or otherwise, that the Intermediary shall, directly or indirectly, lend or invest in other persons or entities identified in any manner whatsoever by or on behalf of the Company (“Ultimate Beneficiaries”) or provide any guarantee, security or the like on behalf of the Ultimate Beneficiaries;', 1134),
+        { p: '(b) The Management has further represented to us that, to the best of its knowledge and belief, no funds have been received by the Company from any person(s) or entity(ies), including foreign entities (“Funding Parties”), with the understanding, whether recorded in writing or otherwise, that the Company shall, directly or indirectly, lend or invest in other persons or entities identified in any manner whatsoever by or on behalf of the Funding Party (“Ultimate Beneficiaries”) or provide any guarantee, security or the like on behalf of the Ultimate Beneficiaries; and', al: 'j', ind: 1701 },
+        { p: '(c) Based on such audit procedures as we considered reasonable and appropriate in the circumstances, nothing has come to our notice that has caused us to believe that the representations under sub-clauses (a) and (b) above contain any material misstatement;', al: 'j', ind: 1701 },
+        L('(v)', divPara, 1134),
+        L('(vi)', trailPara, 1134),
+        ...sigCA(x, f.audDate || f.bmDate)] };
+  }
+
   function annualDocs(x) {
     const { c, a, f } = x, D = [], FYW = T(x, 'periodWord', x.firstFY ? 'period' : 'financial year');
     const shareholders = (c.shareholders || []).filter(s => s.name);
@@ -710,6 +793,7 @@
         { p: 'Certified True Copy', b: true }, ...sigCompany(x, f.bmDate)];
     } });
 
+    D.push(auditReportDoc(x));
     D.push({ id: 'boardreport', title: 'Board’s Report' + (x.small ? ' (Rule 8A — small company / OPC)' : ' (Sec 134(3) & Rule 8)'), sub: 'Attachment to e-Form AOC-4' + (f.rpt === 'yes' ? ' — with Form AOC-2' : ''), lh: LH_CO, build: () => boardsReport(x) });
 
     const rotRes = () => '“**RESOLVED THAT** pursuant to Section 152(6) and other applicable provisions of the Companies Act, 2013, ' + v(x.rot.name) + ' (DIN: ' + v(x.rot.din) + '), who retires by rotation at this meeting and, being eligible, has offered ' + x.rotHim + ' for re-appointment, be and is hereby re-appointed as a Director of the Company, liable to retire by rotation.”';
@@ -1546,6 +1630,11 @@
       set('agmDate', mcaAgm(f.fyEnd) || defAgmDate(c, f.fyEnd));
       if (E.opc) set('bmDate', defAccountsBM(f.agmDate, c));
       else { set('agmNotice', defAgmNotice(f.agmDate, c)); set('bmDate', workday(addDays(f.agmNotice, -1))); }
+      if (x.kase === 'annual') {
+        set('audDate', f.bmDate); // auditor signs on the day the Board approves the accounts
+        const pat = String(f.patCur || '').trim();
+        set('audResult', pat ? (/^\(|^-/.test(pat) ? 'loss' : 'profit') : 'profit');
+      }
       set('bmNotice', defBmNotice(f.bmDate));
     };
     const egm = (base) => { set('egmNotice', addDays(base, 1)); set('egmDate', addDays(f.egmNotice, 22)); };
@@ -1626,6 +1715,7 @@
     if (K === 'yearly') { need('fyEnd', 'Financial year'); if (!x.bms.length) m.push('Dates of Board meetings'); if (!(x.c.directors || []).length) m.push('Directors (client master)'); }
     if (K === 'annual') { need('fyEnd', 'Financial year end'); if (x.E.opc) need('agmDate', 'Date of the sole member’s resolution'); else { need('agmNo', 'AGM number'); need('agmDate', 'AGM date'); need('agmTime', 'AGM time'); } need('bmDate', 'Board meeting date'); need('bmTime', 'Board meeting time');
       if (x.E.pub && !x.rot.name) m.push('Director retiring by rotation');
+      if (f.audOpinion === 'qualified' && !f.audBasis) m.push('Basis for Qualified Opinion (audit report)');
       if (!x.isOPC && !x.d2.name) m.push('Second signing director (tick two signing directors)'); }
     return m;
   }
@@ -1812,8 +1902,8 @@
   // documents that repeat per person / are internal working papers keep their fixed format
   const FIXED = new Set(['offerletter', 'sh1', 'shortnotice', 'stk3', 'stk4', 'adt1', 'dir12', 'annualsheet', 'pas3', 'sh7', 'trsheet', 'inc22', 'inc20a', 'dpt3', 'msme1', 'stk2', 'llpsheet', 'mgt1', 'regdir', 'shlist', 'ycal', 'ynotices', 'yminutes', 'yattend', 'yagmmin', 'ymbp1', 'ydir8', 'ymbp4', 'ymbp2', 'ymemberres', 'llpreg']);
   const isFixed = id => FIXED.has(id) || /^decl\d+$/.test(id);
-  const SELECT_KEYS = new Set(['entity', 'rotIdx', 'apptType', 'reason', 'apptMode', 'regularise', 'appCat', 'retire', 'appTitle', 'coSize', 'rpt', 'shortNotice', 'amtUnit', 'lh', 'addToMaster', 'updateMaster', 'issueType', 'resType', 'scope', 'premises', 'audCert', 'half', 'ground', 'solvent', 'fromIndex', 'resIndex', 'dir2Index', 'offerDays', 'term', 'autoJson']);
-  const PROSE_KEYS = new Set(['remun', 'appRemun', 'appProf', 'appRel', 'appShares', 'appExp', 'appQual', 'ratio', 'bank', 'dividend', 'reserves', 'material', 'natureChange', 'deposits', 'loans186', 'affairs', 'dirChanges', 'audQual', 'audTerm', 'csr', 'subs', 'energy', 'tech', 'fxEarn', 'fxOut', 'resReason', 'rptNotArm', 'partnerChanges', 'ownerRel', 'udin', 'prevEmail', 'prevAddr', 'reasonText', 'resEffDate', 'leaseDate', 'appOther', 'appInterest', 'allottees', 'subscribers', 'dptRows', 'msmeRows', 'stkItems', 'partners', 'rptList', 'bmList', 'premium', 'certFrom', 'toFolio']);
+  const SELECT_KEYS = new Set(['audOpinion', 'audResult', 'caro', 'ifc', 'mgrRemun', 'divPaid', 'audTrail', 'entity', 'rotIdx', 'apptType', 'reason', 'apptMode', 'regularise', 'appCat', 'retire', 'appTitle', 'coSize', 'rpt', 'shortNotice', 'amtUnit', 'lh', 'addToMaster', 'updateMaster', 'issueType', 'resType', 'scope', 'premises', 'audCert', 'half', 'ground', 'solvent', 'fromIndex', 'resIndex', 'dir2Index', 'offerDays', 'term', 'autoJson']);
+  const PROSE_KEYS = new Set(['audBasis', 'remun', 'appRemun', 'appProf', 'appRel', 'appShares', 'appExp', 'appQual', 'ratio', 'bank', 'dividend', 'reserves', 'material', 'natureChange', 'deposits', 'loans186', 'affairs', 'dirChanges', 'audQual', 'audTerm', 'csr', 'subs', 'energy', 'tech', 'fxEarn', 'fxOut', 'resReason', 'rptNotArm', 'partnerChanges', 'ownerRel', 'udin', 'prevEmail', 'prevAddr', 'reasonText', 'resEffDate', 'leaseDate', 'appOther', 'appInterest', 'allottees', 'subscribers', 'dptRows', 'msmeRows', 'stkItems', 'partners', 'rptList', 'bmList', 'premium', 'certFrom', 'toFolio']);
   function tokenCtx(kase, variant) {
     const c = { name: '{{companyName}}', cin: '{{cin}}', addr: '{{regdOffice}}', email: '{{companyEmail}}', web: '', type: 'private', size: 'small', incDate: '{{incDate}}', authCap: '{{authCap}}', paidCap: '{{paidCap}}', faceValue: '10',
       directors: [{ name: '{{director1}}', din: '{{director1Din}}', desig: 'Director' }, { name: '{{director2}}', din: '{{director2Din}}', desig: 'Director' }], shareholders: [] };

@@ -222,6 +222,17 @@ const FIELDS = {
     <div class="span3"><label>Transfer to reserves</label><input data-f="reserves"></div>
     <div class="span3"><label>Change in directors during the year</label><input data-f="dirChanges"></div>
     <div class="span3"><label>Material changes after year end</label><input data-f="material"></div>
+    <div class="span3"><h3 style="margin:6px 0 0">Independent Auditor's Report</h3><div class="hint">Printed on the CA firm's Word letterhead if one is uploaded, otherwise without letterhead. Signed with the partner's signature from CA Firms.</div></div>
+    <div><label>Date of audit report</label><input type="date" data-f="audDate"><div class="hint">Default: date of the Board meeting approving accounts</div></div>
+    <div><label>UDIN of audit report</label><input data-f="udin" placeholder="Generate on udin.icai.org"></div>
+    <div><label>Result for the year</label><select data-f="audResult"><option value="profit">Profit / surplus</option><option value="loss">Loss / deficit</option></select></div>
+    <div><label>Type of opinion</label><select data-f="audOpinion"><option value="unmodified">Unmodified (clean)</option><option value="qualified">Qualified</option></select></div>
+    <div class="span2" data-show="qualified"><label>Basis for Qualified Opinion <span class="req">*</span></label><textarea data-f="audBasis" rows="3" placeholder="Describe the matter, its effect on the financial statements and why it is material"></textarea></div>
+    <div><label>CARO 2020</label><select data-f="caro"><option value="">Auto by company type</option><option value="na">Not applicable — Sec 8 / OPC / small company</option><option value="pvt">Not applicable — private company exemption (capital+reserves ≤ 1 cr, borrowings ≤ 1 cr, revenue ≤ 10 cr)</option><option value="annex">Applicable — Annexure A attached separately</option></select></div>
+    <div><label>Internal financial controls (Sec 143(3)(i))</label><select data-f="ifc"><option value="">Auto by company type</option><option value="exempt">Exempt — G.S.R. 583(E)</option><option value="annex">Applicable — Annexure B attached separately</option></select></div>
+    <div data-show="public"><label>Managerial remuneration (Sec 197)</label><select data-f="mgrRemun"><option value="none">No remuneration paid to directors</option><option value="paid">Paid — within Sec 197 limits</option></select></div>
+    <div><label>Dividend declared / paid?</label><select data-f="divPaid"><option value="no">No</option><option value="yes">Yes — as per Sec 123</option></select></div>
+    <div><label>Accounting software audit trail</label><select data-f="audTrail"><option value="yes">Yes — operated throughout the year</option><option value="no">No audit trail feature</option></select></div>
     <div class="span3"><label>Auditors' report remarks</label><input data-f="audQual" placeholder="Blank = no qualification, reservation or adverse remark"></div>
     <div><label>Related party contracts (Sec 188)?</label><select data-f="rpt"><option value="no">No — AOC-2 not applicable</option><option value="yes">Yes — attach Form AOC-2</option></select></div>
     <div class="span2" data-show="rpt"><label>AOC-2 entries</label><textarea data-f="rptList" placeholder="One per line:  Party & relationship | Nature | Duration | Terms & value | Board approval date | Advance"></textarea></div>
@@ -481,7 +492,7 @@ function paint() {
   const f = G.form, vis = (sel, on) => $$('[data-show="' + sel + '"]').forEach(el => el.classList.toggle('hidden', !on));
   vis('reason-other', f.reason === 'other'); vis('reason-resign', f.reason !== 'other'); vis('prev-agm', f.apptType !== 're');
   vis('regularise', f.apptMode !== 'egm'); vis('egm', f.apptMode === 'egm' || f.regularise === 'yes');
-  vis('rpt', f.rpt === 'yes'); vis('full', f.coSize === 'other'); vis('roc', f.scope === 'roc');
+  vis('rpt', f.rpt === 'yes'); vis('qualified', f.audOpinion === 'qualified'); vis('full', f.coSize === 'other'); vis('roc', f.scope === 'roc');
   const E = DC.entity(c), nf = !DC.isFirstFY(c, DC.fyEndOf(G.fy));
   vis('notfirst', nf); vis('notfirst-opc', nf && E.opc); vis('notfirst-agm', nf && !E.opc);
   vis('opc', E.opc); vis('hasagm', !E.opc); vis('public', E.pub);

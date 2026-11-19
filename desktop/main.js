@@ -63,6 +63,7 @@ async function startServer() {
   process.env.DATA_DIR = DATA_DIR;
   process.env.LOG_DIR = LOG_DIR;
   process.env.SESSION_SECRET = cfg.sessionSecret;
+  process.env.NO_LOGIN = cfg.login ? '0' : '1'; // desktop software opens straight to the CRM — no login page
   if (cfg.mode === 'online' && cfg.databaseUrl) process.env.DATABASE_URL = cfg.databaseUrl; else delete process.env.DATABASE_URL;
   const { start } = require(path.join(__dirname, '..', 'server.js'));
   const host = cfg.lan ? '0.0.0.0' : '127.0.0.1';

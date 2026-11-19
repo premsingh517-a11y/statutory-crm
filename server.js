@@ -93,6 +93,22 @@ function requireLogin(req, res, next) { if (req.session.user) return next(); bad
 function requireAdmin(req, res, next) { if (req.session.user && req.session.user.role === 'admin') return next(); bad(res, 'Only an admin can do this.', 403); }
 const publicUser = u => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, created_at: u.created_at });
 
+// No-login mode (desktop software): everyone who opens the app works as the first admin, no login page.
+// Turned on by NO_LOGIN=1 (the desktop app sets it). Keep it OFF for a public website.
+const NO_LOGIN = process.env.NO_LOGIN === '1';
+async function autoUser() {
+  let { rows } = await db.query("SELECT * FROM users WHERE role='admin' AND active ORDER BY id LIMIT 1");
+  if (!rows[0]) {
+    const hash = await bcrypt.hash(require('crypto').randomBytes(24).toString('hex'), 10);
+    rows = (await db.query("INSERT INTO users (name,email,password_hash,role) VALUES ($1,$2,$3,'admin') ON CONFLICT (email) DO UPDATE SET active=true RETURNING *", ['Admin', 'admin@neusource.local', hash])).rows;
+  }
+  return publicUser(rows[0]);
+}
+if (NO_LOGIN) app.use('/api', async (req, res, next) => {
+  if (req.session.user) return next();
+  try { req.session.user = await autoUser(); next(); } catch (e) { next(e); }
+});
+
 // simple login throttle: 8 failed tries per email+IP per 15 minutes
 const tries = new Map();
 function throttled(key) { const t = tries.get(key); return t && t.n >= 8 && Date.now() - t.at < 15 * 60 * 1000; }
@@ -133,13 +149,13 @@ app.post('/api/login', async (req, res) => {
     res.json({ user: req.session.user });
   });
 });
-app.post('/api/logout', (req, res) => { req.session.destroy(() => { res.clearCookie('nscrm.sid'); res.json({ ok: true }); }); });
+app.post('/api/logout', (req, res) => { if (NO_LOGIN) return res.json({ ok: true, noLogin: true }); req.session.destroy(() => { res.clearCookie('nscrm.sid'); res.json({ ok: true }); }); });
 app.get('/api/me', async (req, res) => {
   if (!req.session.user) return res.json({ user: null });
   const { rows } = await db.query('SELECT * FROM users WHERE id=$1', [req.session.user.id]);
   if (!rows[0] || !rows[0].active) { req.session.destroy(() => {}); return res.json({ user: null }); }
   req.session.user = publicUser(rows[0]);
-  res.json({ user: req.session.user });
+  res.json({ user: req.session.user, noLogin: NO_LOGIN });
 });
 app.post('/api/me/password', requireLogin, async (req, res) => {
   const cur = String(req.body.current || ''), next = String(req.body.password || '');

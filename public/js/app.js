@@ -49,7 +49,8 @@ function renderLogos() {
 async function boot() {
   renderLogos();
   try {
-    const { user } = await api('GET', '/api/me');
+    const { user, noLogin } = await api('GET', '/api/me');
+    S.noLogin = !!noLogin;
     if (user) { S.me = user; return startApp(); }
   } catch (e) { /* fall through */ }
   showAuth();
@@ -76,6 +77,7 @@ $('menuToggle').onclick = () => $('side').classList.toggle('open');
 
 async function startApp() {
   $('auth').classList.add('hidden'); $('appShell').classList.remove('hidden');
+  if (S.noLogin && $('logoutBtn')) $('logoutBtn').classList.add('hidden'); // no login page in the desktop software
   $('meName').textContent = S.me.name; $('meRole').textContent = S.me.role;
   $('meAvatar').textContent = S.me.name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
   $$('.admin-only').forEach(el => el.classList.toggle('hidden', !isAdmin()));

@@ -1609,6 +1609,8 @@
     const x = prep(ctx), c = x.c, f = Object.assign({}, x.f), out = {}; auto = auto || {};
     const link = ctx.link || {}, pa = link.prevAnnual || {}, yl = link.yearly || {};
     const forced = {};
+    // automatic Board meeting dates are always refreshed; manual ones are kept as typed
+    const bmDates = val => { if (!val) return; if (f.bmManual === 'yes') { if (!f.bmList) { f.bmList = val; out.bmList = val; } } else if (f.bmList !== val) { f.bmList = val; out.bmList = val; } };
     const set = (k, val) => { if (!val || forced[k]) return; if (!f[k] || f[k] === auto[k]) { f[k] = val; out[k] = val; } };
     const force = (k, val) => { if (!val) return; forced[k] = true; if (f[k] !== val) { f[k] = val; out[k] = val; } };
     const fyEnd = ctx.fy ? fyEndOf(ctx.fy) : '', E = entity(c);
@@ -1643,7 +1645,8 @@
       case 'agm': agmBlock(); set('consentDate', addDays(f.bmDate, -3)); break;
       case 'casual': set('bmDate', addDays(f.vacDate, 20)); set('bmNotice', addDays(f.bmDate, -8)); set('consentDate', addDays(f.bmDate, -3)); if (f.reason !== 'other') egm(f.bmDate); break;
       case 'annual': agmBlock(); set('coSize', c.size === 'other' ? 'other' : 'small');
-        set('bmList', yl.bmList || dmyList(fyMeetings(c, f.fyEnd, { count: yl.bmCount || (E.opc || E.sec8 ? '2' : '4'), accounts: pa.bmDate, prevAgm: pa.agmDate || mcaAgm(addMonths(f.fyEnd, -12)) }))); break;
+        // Board meeting dates: worked out from the incorporation date and the FY unless the user chose to enter them
+        bmDates(yl.bmManual === 'yes' && yl.bmList ? yl.bmList : dmyList(fyMeetings(c, f.fyEnd, { count: yl.bmCount || (E.opc || E.sec8 ? '2' : '4'), accounts: pa.bmDate, prevAgm: pa.agmDate || mcaAgm(addMonths(f.fyEnd, -12)) }))); break;
       case 'dirapp': set('bmNotice', addDays(f.bmDate, -8)); set('consentDate', addDays(f.bmDate, -1)); egm(f.bmDate); break;
       case 'dirres': set('resReceipt', f.resLetter); set('bmDate', addDays(f.resReceipt, 8)); set('bmNotice', f.resReceipt); break;
       case 'allot': set('bmNotice', addDays(f.bmDate, -8)); set('offerDate', addDays(f.bmDate, 1)); set('offerDays', '15'); set('lastDate', addDays(f.offerDate, num(f.offerDays) || 15)); set('alDate', addDays(f.lastDate, 2)); set('alTime', '11:00'); set('alNotice', addDays(f.alDate, -8)); break;
@@ -1667,7 +1670,7 @@
           set('agmDate', pa.agmDate || mcaAgm(prevEnd) || defAgmDate(c, prevEnd));
           set('accBm', pa.bmDate || defAccountsBM(f.agmDate, c));
         }
-        set('bmList', dmyList(fyMeetings(c, f.fyEnd, { count: f.bmCount, accounts: f.accBm })));
+        bmDates(dmyList(fyMeetings(c, f.fyEnd, { count: f.bmCount, accounts: f.accBm })));
         set('regAsOn', f.fyEnd);
         break;
       }
@@ -1842,8 +1845,9 @@
     if (['yearly', 'annual'].includes(x.kase) && x.bms.length) {
       const R = bmRule(x);
       if (R.gap) for (let i = 1; i < x.bms.length; i++) { const g = (pd(x.bms[i]) - pd(x.bms[i - 1])) / 864e5; if (g > R.gap) W.push('Gap of ' + Math.round(g) + ' days between Board meetings on ' + sd(x.bms[i - 1]) + ' and ' + sd(x.bms[i]) + ' — more than ' + R.gap + ' days (' + R.ref + ').'); }
-      if (x.bms.length < R.min) W.push('Only ' + x.bms.length + ' Board meeting(s) in the year — at least ' + R.min + ' required (' + R.ref + ').');
-      if (R.half) { const halves = new Set(x.bms.map(d => d.slice(0, 4) + (+d.slice(5, 7) <= 6 ? 'H1' : 'H2'))); if (halves.size < Math.min(2, x.bms.length)) W.push('Hold the meetings in different halves of the calendar year (' + R.ref + ').'); }
+      // first FY (year of incorporation): first meeting within 30 days and the gap rule apply; the yearly minimum does not
+      if (!x.firstFY && x.bms.length < R.min) W.push('Only ' + x.bms.length + ' Board meeting(s) in the year — at least ' + R.min + ' required (' + R.ref + ').');
+      if (R.half && !x.firstFY) { const halves = new Set(x.bms.map(d => d.slice(0, 4) + (+d.slice(5, 7) <= 6 ? 'H1' : 'H2'))); if (halves.size < Math.min(2, x.bms.length)) W.push('Hold the meetings in different halves of the calendar year (' + R.ref + ').'); }
       const off = x.bms.filter(d => pd(d) && (pd(d).getUTCDay() === 0 || HOLIDAYS.includes(d.slice(5))));
       if (off.length) W.push('Board meeting on a Sunday / national holiday: ' + off.map(sd).join(', ') + '.');
     }
@@ -1871,8 +1875,6 @@
     if (c.type === 'llp' && x.kase !== 'llp' && x.kase !== 'registers') W.push('This client is an LLP — company documents do not apply. Use the LLP case.');
     if (x.kase === 'annual') {
       if (!x.isOPC && x.d2.name && x.d.name === x.d2.name) W.push('Choose two different directors to sign the Board’s Report and financial statements (Sec 134).');
-      if (!x.small && x.bms.length && (x.bms.length < 4 || !bmGapOK(x))) W.push('Sec 173(1): at least 4 Board meetings a year with a gap of not more than 120 days. Please check the dates entered.');
-      if (x.small && x.bms.length && x.bms.length < 2 && !x.firstFY) W.push('Small company / OPC: at least one Board meeting in each half of the calendar year (Sec 173(5)).');
     }
     return W;
   }
@@ -1902,7 +1904,7 @@
   // documents that repeat per person / are internal working papers keep their fixed format
   const FIXED = new Set(['offerletter', 'sh1', 'shortnotice', 'stk3', 'stk4', 'adt1', 'dir12', 'annualsheet', 'pas3', 'sh7', 'trsheet', 'inc22', 'inc20a', 'dpt3', 'msme1', 'stk2', 'llpsheet', 'mgt1', 'regdir', 'shlist', 'ycal', 'ynotices', 'yminutes', 'yattend', 'yagmmin', 'ymbp1', 'ydir8', 'ymbp4', 'ymbp2', 'ymemberres', 'llpreg']);
   const isFixed = id => FIXED.has(id) || /^decl\d+$/.test(id);
-  const SELECT_KEYS = new Set(['audOpinion', 'audResult', 'caro', 'ifc', 'mgrRemun', 'divPaid', 'audTrail', 'entity', 'rotIdx', 'apptType', 'reason', 'apptMode', 'regularise', 'appCat', 'retire', 'appTitle', 'coSize', 'rpt', 'shortNotice', 'amtUnit', 'lh', 'addToMaster', 'updateMaster', 'issueType', 'resType', 'scope', 'premises', 'audCert', 'half', 'ground', 'solvent', 'fromIndex', 'resIndex', 'dir2Index', 'offerDays', 'term', 'autoJson']);
+  const SELECT_KEYS = new Set(['bmManual', 'audOpinion', 'audResult', 'caro', 'ifc', 'mgrRemun', 'divPaid', 'audTrail', 'entity', 'rotIdx', 'apptType', 'reason', 'apptMode', 'regularise', 'appCat', 'retire', 'appTitle', 'coSize', 'rpt', 'shortNotice', 'amtUnit', 'lh', 'addToMaster', 'updateMaster', 'issueType', 'resType', 'scope', 'premises', 'audCert', 'half', 'ground', 'solvent', 'fromIndex', 'resIndex', 'dir2Index', 'offerDays', 'term', 'autoJson']);
   const PROSE_KEYS = new Set(['audBasis', 'remun', 'appRemun', 'appProf', 'appRel', 'appShares', 'appExp', 'appQual', 'ratio', 'bank', 'dividend', 'reserves', 'material', 'natureChange', 'deposits', 'loans186', 'affairs', 'dirChanges', 'audQual', 'audTerm', 'csr', 'subs', 'energy', 'tech', 'fxEarn', 'fxOut', 'resReason', 'rptNotArm', 'partnerChanges', 'ownerRel', 'udin', 'prevEmail', 'prevAddr', 'reasonText', 'resEffDate', 'leaseDate', 'appOther', 'appInterest', 'allottees', 'subscribers', 'dptRows', 'msmeRows', 'stkItems', 'partners', 'rptList', 'bmList', 'premium', 'certFrom', 'toFolio']);
   function tokenCtx(kase, variant) {
     const c = { name: '{{companyName}}', cin: '{{cin}}', addr: '{{regdOffice}}', email: '{{companyEmail}}', web: '', type: 'private', size: 'small', incDate: '{{incDate}}', authCap: '{{authCap}}', paidCap: '{{paidCap}}', faceValue: '10',

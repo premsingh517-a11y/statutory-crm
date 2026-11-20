@@ -1,6 +1,6 @@
 {
   "name": "neusource-statutory-crm",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "description": "NeuSource Statutory CRM — auditor appointment documents (ADT-1) on letterhead",
   "main": "server.js",
   "private": true,

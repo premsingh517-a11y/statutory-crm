@@ -211,7 +211,8 @@ const FIELDS = {
     <div class="span3"><label>AGM Venue</label><input data-f="agmVenue" placeholder="Leave blank to use the Registered Office"></div>
     <div data-show="public"><label>Director retiring by rotation <span class="req">*</span></label><select data-f="rotIdx" data-dirs></select><div class="hint">Public company — Sec 152(6); longest in office is chosen by default</div></div></div></div>
     ${BM(true)}
-    <div class="grid" style="margin-top:12px"><div class="span3"><label>Dates of all Board meetings held during the year</label><textarea data-f="bmList" placeholder="One date per line, e.g. 15/05/2025"></textarea><div class="hint">Filled automatically for the chosen FY (same dates as Yearly Records) — printed in the Board's Report and MGT-7.</div></div></div>
+    <div class="grid" style="margin-top:12px"><div><label>Board meeting dates</label><select data-f="bmManual"><option value="">Automatic — from incorporation date &amp; FY</option><option value="yes">I will enter the dates myself</option></select></div></div>
+    <div class="grid" style="margin-top:8px"><div class="span3"><label>Dates of all Board meetings held during the year</label><textarea data-f="bmList" placeholder="One date per line, e.g. 15/05/2025"></textarea><div class="hint">Filled automatically for the chosen FY (same dates as Yearly Records) — printed in the Board's Report and MGT-7.</div></div></div>
     <h3>Financial Highlights (for Board's Report)</h3><div class="grid">
     <div><label>Amounts shown in</label><select data-f="amtUnit"><option>Amount in Rs.</option><option>Rs. in Lakhs</option><option>Rs. in Thousands</option></select></div><div></div><div></div>
     <div><label>Total revenue — this year</label><input data-f="revCur"></div><div><label>Total revenue — previous year</label><input data-f="revPrev"></div><div></div>
@@ -328,6 +329,7 @@ const FIELDS = {
     <div><label>Board meetings in the year</label><select data-f="bmCount"><option value="4">4 — quarterly (Sec 173(1), gap ≤ 120 days)</option><option value="2">2 — small company / OPC (Sec 173(5))</option></select></div>
     <div><label>Chairperson of meetings</label><select data-f="chair" data-dirs></select></div></div>
     <h3>Board Meetings</h3><div class="grid">
+    <div><label>Board meeting dates</label><select data-f="bmManual"><option value="">Automatic — from incorporation date &amp; FY</option><option value="yes">I will enter the dates myself</option></select></div></div><div class="grid">
     <div class="span2"><label>Dates of Board meetings in this FY <span class="req">*</span></label><textarea data-f="bmList" rows="5" placeholder="One date per line, e.g. 20/06/2025"></textarea><div class="hint">Filled automatically for the chosen FY (no Sundays / national holidays). Change any date; the notices, minutes and Board's Report follow.</div></div>
     <div><label>Time of meetings</label><input type="time" data-f="bmTime" data-def="11:00"><label style="margin-top:10px">Venue</label><input data-f="bmVenue" placeholder="Blank = Registered Office"></div>
     <div data-show="notfirst"><label>Meeting approving last year's accounts</label><input type="date" data-f="accBm"><div class="hint">Its minutes carry the accounts, Board's Report and AGM items</div></div></div>
@@ -494,6 +496,7 @@ function paint() {
   const f = G.form, vis = (sel, on) => $$('[data-show="' + sel + '"]').forEach(el => el.classList.toggle('hidden', !on));
   vis('reason-other', f.reason === 'other'); vis('reason-resign', f.reason !== 'other'); vis('prev-agm', f.apptType !== 're');
   vis('regularise', f.apptMode !== 'egm'); vis('egm', f.apptMode === 'egm' || f.regularise === 'yes');
+  $$('#g-form [data-f="bmList"]').forEach(el => { const auto = f.bmManual !== 'yes'; el.readOnly = auto; el.classList.toggle('locked', auto); el.title = auto ? 'Worked out automatically — choose “I will enter the dates myself” to change' : ''; });
   vis('rpt', f.rpt === 'yes'); vis('qualified', f.audOpinion === 'qualified'); vis('full', f.coSize === 'other'); vis('roc', f.scope === 'roc');
   const E = DC.entity(c), nf = !DC.isFirstFY(c, DC.fyEndOf(G.fy));
   vis('notfirst', nf); vis('notfirst-opc', nf && E.opc); vis('notfirst-agm', nf && !E.opc);

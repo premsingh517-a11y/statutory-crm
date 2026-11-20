@@ -12,8 +12,8 @@ const vi = ResEdit.Resource.VersionInfo.fromEntries(res.entries)[0] || ResEdit.R
 const [a, b, c] = version.split('.').map(Number);
 vi.setFileVersion(a, b, c, 0, 1033); vi.setProductVersion(a, b, c, 0, 1033);
 vi.setStringValues({ lang: 1033, codepage: 1200 }, {
-  ProductName: 'NeuSource Statutory CRM', FileDescription: 'NeuSource Statutory CRM', CompanyName: 'NeuSource Startup Minds India',
-  LegalCopyright: 'NeuSource Startup Minds India', FileVersion: version, ProductVersion: version, OriginalFilename: 'NeuSource Statutory CRM.exe', InternalName: 'NeuSource Statutory CRM' });
+  ProductName: 'ROC Docs Prepare', FileDescription: 'ROC Docs Prepare', CompanyName: 'ROC Docs Prepare',
+  LegalCopyright: 'ROC Docs Prepare', FileVersion: version, ProductVersion: version, OriginalFilename: 'ROC Docs Prepare.exe', InternalName: 'ROC Docs Prepare' });
 vi.outputToResourceEntries(res.entries);
 res.outputResource(pe);
 fs.writeFileSync(exe, Buffer.from(pe.generate()));

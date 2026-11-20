@@ -1,5 +1,5 @@
 @echo off
-title NeuSource Statutory CRM - KEEP THIS WINDOW OPEN
+title ROC Docs Prepare - KEEP THIS WINDOW OPEN
 cd /d "%~dp0"
 
 where node >nul 2>nul
@@ -25,7 +25,7 @@ if not exist node_modules\express (
 
 echo.
 echo  ==========================================================
-echo    NeuSource Statutory CRM
+echo    ROC Docs Prepare
 echo    Open in browser:  http://localhost:3000
 echo    KEEP THIS WINDOW OPEN while using the portal.
 echo    (Minimise it - do not close it.)

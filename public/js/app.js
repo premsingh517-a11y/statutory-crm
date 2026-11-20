@@ -1,4 +1,4 @@
-/* NeuSource Statutory CRM — frontend */
+/* ROC Docs Prepare — frontend */
 (function () {
 'use strict';
 const DC = window.DocsContent, H = DC.helpers;
@@ -31,17 +31,10 @@ function toast(msg, err) {
 const fail = e => toast(e.message || String(e), true);
 
 /* ---------------- logo ---------------- */
-// Uses /img/logo.png if you add one; otherwise the logo from neusourcestartup.com; otherwise a text wordmark.
-const SITE_LOGO = 'https://www.neusourcestartup.com/content/v2/img/Neusource-India.png';
+// App icon from /img/logo.png with the name beside it.
 function renderLogos() {
   $$('[data-logo]').forEach(el => {
-    el.innerHTML = '';
-    const img = new Image(); img.alt = 'NeuSource'; img.src = '/img/logo.png';
-    img.onerror = () => {
-      if (img.src.indexOf('/img/logo.png') !== -1) { img.src = SITE_LOGO; return; }
-      el.innerHTML = '<span class="wordmark">Neu<span>Source</span></span>';
-    };
-    el.appendChild(img);
+    el.innerHTML = '<span class="logomark"><img src="/img/logo.png" alt=""><span class="wordmark">ROC Docs <span>Prepare</span></span></span>';
   });
 }
 

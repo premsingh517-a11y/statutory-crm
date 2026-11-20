@@ -1,6 +1,6 @@
-# NeuSource Statutory CRM — Auditor Appointment
+# ROC Docs Prepare — Company Compliance Documents
 
-Team portal for NeuSource executives: save client and CA firm details once, then generate
+Team portal for executives: save client and CA firm details once, then generate
 auditor appointment documents on letterhead (Word .docx) with the e-Form ADT-1 data sheet.
 
 **Cases covered** (16)
@@ -43,6 +43,7 @@ gold background and can be changed; changing one date updates the dates that dep
   - *Section 8*: never small (MGT-7, full report); Income and Expenditure Account; no dividend; 14 clear days' AGM notice; 2 Board meetings (once in every six calendar months); Board quorum of 8 or 25%.
   - *OPC*: no AGM — sole member's resolution under Sec 122(3); AOC-4 within 180 days of the FY end; MGT-7A within 60 days of the AGM due date; "Auditor at AGM" hidden.
   - *LLP*: only LLP cases (Form 11 & 8, Register of Partners — Form 4A); first FY may run to the next 31 March if incorporated after 30 September.
+- **New name (v1.4.0): ROC Docs Prepare.** The desktop app moves the data of the earlier version from `%APPDATA%\NeuSource Statutory CRM` to `%APPDATA%\ROC Docs Prepare` on first start; the installer removes the old program and shortcut.
 - **Automatic Board meeting dates (v1.3.4):** in Annual Filing and Yearly Records the dates are always worked out from the incorporation date and the FY (no Sundays / national holidays, rules for the company type). Choose "I will enter the dates myself" to type them. In the year of incorporation only the first-meeting (30 days) and gap rules are checked.
 - **No login page in the desktop software (v1.3.3):** the app opens straight to Clients and works as the first admin (`NO_LOGIN=1`, set by the desktop app). The public website (Render) still asks for login unless `NO_LOGIN=1` is set there.
 - **Independent Auditor's Report (v1.3.2)** in the Annual Filing case (SA 700 / Sec 143): on the CA firm's uploaded Word letterhead, otherwise without letterhead. Follows the company type — Income and Expenditure Account for Section 8, no Cash Flow Statement for OPC / small companies, CARO 2020 applicable or not (with the reason), IFC exemption (G.S.R. 583(E)) or Annexure B, Sec 197 for public companies, dividend and audit-trail (Rule 11(g)) wording, qualified opinion with basis. Signed with the partner's signature and UDIN.
@@ -61,7 +62,7 @@ lib/db.js                 PostgreSQL connection and tables (created automaticall
 lib/docx-builder.js       Builds the .docx files (letterhead, tables, page numbers)
 public/js/docs-content.js Wording of all documents + deadlines (used by server AND browser preview)
 public/js/app.js          Frontend (clients, client workspace, CA firms, templates, team, activity)
-public/css/app.css        NeuSource theme (maroon #8A1412, gold #E6A65A, green #28A745)
+public/css/app.css        theme (maroon #8A1412, gold #E6A65A, green #28A745)
 public/index.html         Page shell
 render.yaml               One-click Render setup (web app + database)
 ```
@@ -70,8 +71,7 @@ To change the wording of any document, edit `public/js/docs-content.js`. Preview
 
 ## Logo
 
-The header shows `public/img/logo.png` if you add it. If that file is not there, it loads the logo from
-neusourcestartup.com, and if that also fails it shows the text "NeuSource".
+The header shows the app icon (`public/img/logo.png`) with the name "ROC Docs Prepare". Replace that PNG to change the icon.
 For best results, put your logo (PNG, transparent or white background, ~300 px wide) at `public/img/logo.png`.
 
 ---
@@ -100,7 +100,7 @@ then open http://localhost:3000.
 **Your data** is in the `data` folder. Back it up by copying that folder (with the portal closed),
 or use **Team & Access → Download data backup**. Do not delete the `data` folder.
 
-Using your own PostgreSQL instead: set `DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/neusource_crm` before starting.
+Using your own PostgreSQL instead: set `DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/roc_docs` before starting.
 
 ## Deploy for FREE (Render free app + Neon free database)
 
@@ -146,11 +146,11 @@ All drafts must be reviewed by a Chartered Accountant / Company Secretary before
 
 ## Windows software (desktop app)
 
-The same CRM also ships as a Windows program: `NeuSource-Statutory-CRM-Setup-x.y.z.exe`.
+The same CRM also ships as a Windows program: `ROC-Docs-Prepare-Setup-x.y.z.exe`.
 
-- Install it, then open **NeuSource CRM** from the desktop. No browser, no `START.bat`.
-- Data is kept in `%APPDATA%\NeuSource Statutory CRM\pgdata`. A backup is made once a day (last 7 days) in the `backups` folder next to it.
-- Word files and ZIPs are saved to `Downloads\NeuSource CRM`. You can change this in **File → Settings**.
+- Install it, then open **ROC Docs Prepare** from the desktop. No browser, no `START.bat`.
+- Data is kept in `%APPDATA%\ROC Docs Prepare\pgdata`. A backup is made once a day (last 7 days) in the `backups` folder next to it.
+- Word files and ZIPs are saved to `Downloads\ROC Docs Prepare`. You can change this in **File → Settings**.
 - **File → Import data from old portal…** copies clients, CA firms, users and templates from the old `statutory-crm\data` folder.
 - **File → Settings** chooses how the app works:
   - *Data on this computer* (default). Turn on **Allow office PCs to connect** to share it on the office network.
@@ -160,7 +160,7 @@ The same CRM also ships as a Windows program: `NeuSource-Statutory-CRM-Setup-x.y
 Build the installer on Linux (needs Wine with 32-bit support) or on Windows:
 
 ```
-bash desktop/build.sh            # writes dist/NeuSource-Statutory-CRM-Setup-<version>.exe
+bash desktop/build.sh            # writes dist/ROC-Docs-Prepare-Setup-<version>.exe
 ```
 
 The installer is not code-signed, so Windows SmartScreen shows "Windows protected your PC" the first time. Click **More info → Run anyway**.

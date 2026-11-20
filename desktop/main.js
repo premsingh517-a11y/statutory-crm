@@ -1,4 +1,4 @@
-// NeuSource Statutory CRM — Windows desktop app (Electron)
+// ROC Docs Prepare — Windows desktop app (Electron)
 // Runs the same portal inside its own window. Three ways to work:
 //   local  — data on this computer (default)
 //   client — connect to the main office PC that runs the CRM
@@ -9,12 +9,21 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 
-const APP_NAME = 'NeuSource Statutory CRM';
+const APP_NAME = 'ROC Docs Prepare';
 app.setName(APP_NAME);
-if (process.platform === 'win32') app.setAppUserModelId('com.neusource.statutorycrm');
+if (process.platform === 'win32') app.setAppUserModelId('com.rocdocsprepare.app');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
+// data of the earlier version (kept under its old folder name) moves to the new folder on first start
+try {
+  const appData = app.getPath('appData'), oldDir = path.join(appData, 'NeuSource Statutory CRM'), newDir = path.join(appData, APP_NAME);
+  if (fs.existsSync(oldDir) && !fs.existsSync(path.join(newDir, 'pgdata'))) {
+    fs.mkdirSync(newDir, { recursive: true });
+    for (const n of fs.readdirSync(oldDir)) { const to = path.join(newDir, n); if (!fs.existsSync(to)) fs.renameSync(path.join(oldDir, n), to); }
+  }
+  app.setPath('userData', newDir);
+} catch (e) { console.error('Could not move old data folder:', e.message); }
 const USER = app.getPath('userData');
 const CFG_FILE = path.join(USER, 'config.json');
 const DATA_DIR = path.join(USER, 'pgdata');
@@ -94,10 +103,10 @@ function createWindow(url) {
   win.loadURL(url);
 }
 
-// Word / ZIP / Excel downloads go straight to Downloads\NeuSource CRM
+// Word / ZIP / Excel downloads go straight to Downloads\ROC Docs Prepare
 function setupDownloads() {
   session.defaultSession.on('will-download', (e, item) => {
-    const dir = cfg.downloads || path.join(app.getPath('downloads'), 'NeuSource CRM');
+    const dir = cfg.downloads || path.join(app.getPath('downloads'), 'ROC Docs Prepare');
     fs.mkdirSync(dir, { recursive: true });
     const name = item.getFilename(), ext = path.extname(name), base = name.slice(0, name.length - ext.length);
     let target = path.join(dir, name);
@@ -123,7 +132,7 @@ function openSettings() {
   settingsWin.on('closed', () => { settingsWin = null; });
   settingsWin.loadFile(path.join(__dirname, 'settings.html'));
 }
-ipcMain.handle('cfg:get', () => ({ cfg: Object.assign({}, cfg, { sessionSecret: undefined }), lan: lanAddresses(), port: actualPort, dataDir: DATA_DIR, version: app.getVersion(), downloadsDefault: path.join(app.getPath('downloads'), 'NeuSource CRM') }));
+ipcMain.handle('cfg:get', () => ({ cfg: Object.assign({}, cfg, { sessionSecret: undefined }), lan: lanAddresses(), port: actualPort, dataDir: DATA_DIR, version: app.getVersion(), downloadsDefault: path.join(app.getPath('downloads'), 'ROC Docs Prepare') }));
 ipcMain.handle('cfg:save', (e, next) => {
   const keep = ['mode', 'port', 'lan', 'serverUrl', 'databaseUrl', 'downloads'];
   keep.forEach(k => { if (k in next) cfg[k] = next[k]; });
@@ -179,7 +188,7 @@ function buildMenu() {
   const local = cfg.mode === 'local';
   const tpl = [
     { label: 'File', submenu: [
-      { label: 'Open downloads folder', click: () => { const d = cfg.downloads || path.join(app.getPath('downloads'), 'NeuSource CRM'); fs.mkdirSync(d, { recursive: true }); shell.openPath(d); } },
+      { label: 'Open downloads folder', click: () => { const d = cfg.downloads || path.join(app.getPath('downloads'), 'ROC Docs Prepare'); fs.mkdirSync(d, { recursive: true }); shell.openPath(d); } },
       { type: 'separator' },
       { label: 'Import data from old portal…', enabled: local, click: importOldData },
       { label: 'Open backups folder', enabled: local, click: () => { fs.mkdirSync(BACKUP_DIR, { recursive: true }); shell.openPath(BACKUP_DIR); } },
@@ -199,7 +208,7 @@ function buildMenu() {
     { label: 'Help', submenu: [
       { label: 'Open error log', click: () => { const f = path.join(LOG_DIR, 'error.log'); fs.existsSync(f) ? shell.openPath(f) : dialog.showMessageBox(win, { message: 'No errors have been logged.' }); } },
       { label: 'About', click: () => dialog.showMessageBox(win, { type: 'info', title: 'About', icon: ICON, message: APP_NAME + '  v' + app.getVersion(),
-        detail: 'NeuSource Startup Minds India\n\nMode: ' + ({ local: 'Data on this computer', client: 'Connected to ' + cfg.serverUrl, online: 'Online database' })[cfg.mode] + (local ? '\nData folder: ' + USER : '') + '\n\nAll drafts must be reviewed by a CA / CS before signing or filing.' }) },
+        detail: 'Mode: ' + ({ local: 'Data on this computer', client: 'Connected to ' + cfg.serverUrl, online: 'Online database' })[cfg.mode] + (local ? '\nData folder: ' + USER : '') + '\n\nAll drafts must be reviewed by a CA / CS before signing or filing.' }) },
     ] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(tpl));

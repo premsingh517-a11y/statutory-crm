@@ -1,4 +1,4 @@
-// NeuSource Statutory CRM — Express server
+// ROC Docs Prepare — Express server
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
@@ -100,7 +100,7 @@ async function autoUser() {
   let { rows } = await db.query("SELECT * FROM users WHERE role='admin' AND active ORDER BY id LIMIT 1");
   if (!rows[0]) {
     const hash = await bcrypt.hash(require('crypto').randomBytes(24).toString('hex'), 10);
-    rows = (await db.query("INSERT INTO users (name,email,password_hash,role) VALUES ($1,$2,$3,'admin') ON CONFLICT (email) DO UPDATE SET active=true RETURNING *", ['Admin', 'admin@neusource.local', hash])).rows;
+    rows = (await db.query("INSERT INTO users (name,email,password_hash,role) VALUES ($1,$2,$3,'admin') ON CONFLICT (email) DO UPDATE SET active=true RETURNING *", ['Admin', 'admin@rocdocs.local', hash])).rows;
   }
   return publicUser(rows[0]);
 }
@@ -305,7 +305,7 @@ app.post('/api/mca/parse', requireLogin, async (req, res) => {
 app.get('/api/import/template', requireLogin, async (req, res) => {
   const buf = await XL.template();
   res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.set('Content-Disposition', 'attachment; filename="NeuSource_CRM_Client_Import_Template.xlsx"');
+  res.set('Content-Disposition', 'attachment; filename="Client_Import_Template.xlsx"');
   res.send(Buffer.from(buf));
 });
 app.post('/api/import', requireLogin, async (req, res) => {
@@ -500,7 +500,7 @@ app.get('/api/activity', requireAdmin, async (req, res) => {
 app.get('/api/backup', requireAdmin, async (req, res) => {
   const [c, a, f] = await Promise.all([db.query('SELECT id, data FROM clients'), db.query('SELECT id, data FROM cas'), db.query('SELECT * FROM filings')]);
   db.log(req.session.user.id, 'backup', 'Downloaded backup');
-  res.set('Content-Disposition', 'attachment; filename="neusource-crm-backup-' + new Date().toISOString().slice(0, 10) + '.json"');
+  res.set('Content-Disposition', 'attachment; filename="roc-docs-backup-' + new Date().toISOString().slice(0, 10) + '.json"');
   res.json({ exportedAt: new Date().toISOString(), clients: c.rows, cas: a.rows, filings: f.rows });
 });
 
@@ -524,7 +524,7 @@ process.on('uncaughtException', e => logCrash('uncaughtException', e));
 // start(port, host) → resolves with the http server; used by `node server.js` and by the desktop app
 function start(port, host) {
   return db.init().then(() => new Promise((resolve, reject) => {
-    const ready = () => { console.log('NeuSource Statutory CRM running on http://localhost:' + port); resolve(server); };
+    const ready = () => { console.log('ROC Docs Prepare running on http://localhost:' + port); resolve(server); };
     const server = host ? app.listen(port, host, ready) : app.listen(port, ready);
     server.on('error', reject);
   }));

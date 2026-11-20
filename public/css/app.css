@@ -1,5 +1,5 @@
-/* NeuSource Statutory CRM — brand theme
-   NeuSource colours: maroon #8A1412, gold #E6A65A, green #28A745 */
+/* ROC Docs Prepare — theme
+   Colours: maroon #8A1412, gold #E6A65A, green #28A745 */
 :root{
   --brand:#8A1412; --brand-d:#6d0f0e; --brand-l:#fbeceb; --brand-ll:#fdf6f5;
   --gold:#E6A65A; --gold-l:#fdf3e6; --gold-d:#9a6420;
@@ -201,3 +201,8 @@ a.clink{color:inherit;text-decoration:none}a.clink:hover b{color:var(--brand);te
 .fycard{border-left:4px solid var(--gold)}
 .fycard select{font-weight:700;font-size:15px}
 input.locked,textarea.locked{background:#f6f2f0;color:var(--ink2);cursor:not-allowed}
+
+/* logo: app icon + name */
+.logomark{display:inline-flex;align-items:center;gap:8px}.logomark img{height:34px;width:34px}
+.brandbox .app{display:none}
+.hero .wordmark{color:#fff}.hero .wordmark span{color:var(--gold)}
